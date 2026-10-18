@@ -361,6 +361,11 @@ and SLF4J (MIT); their notices and full license texts are in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and the [licenses](licenses) folder, and a release
 archive contains them next to the exe.
 
+## Credits
+
+The code, tests and documentation of tuifileman were written by AI coding assistants, working under the
+direction of the repository owner: Sonnet 5.5, Opus 5.5 and GPT-5.6-sol. The credit for the code is theirs.
+
 ## JLine experiment (archived)
 
 An earlier prototype used JLine 4.4.7. It proved viable for rendering and
