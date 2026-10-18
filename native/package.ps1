@@ -23,7 +23,8 @@ try {
     $zip = "target\release\$name.zip"
     Compress-Archive -Path $stage -DestinationPath $zip
     $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-    Set-Content "$zip.sha256" "$hash  $name.zip" -Encoding ascii
+    # LF line ending: `sha256sum -c` rejects the CRLF that Set-Content writes
+    [IO.File]::WriteAllText((Join-Path (Get-Location).Path "$zip.sha256"), "$hash  $name.zip`n")
     Write-Output "$zip  sha256 $hash"
 } finally {
     Pop-Location

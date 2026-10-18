@@ -12,6 +12,6 @@
 - Scriptable command line (`diff`, `sync`, `copy`, `move`, `delete`, `rename`, `find`) with JSON/CSV output,
   dry runs, reviewable plans and defined exit codes; `install-aliases` for `tfm-*` command names.
 - Release builds: Windows x64 zip and Linux x64 tar.gz, each a single GraalVM native executable with the licence
-  files and a SHA-256 file. Both are built by CI from the same fat jar. The Linux binary needs a glibc at least as
-  new as the one on the CI runner.
+  files and a SHA-256 file. Both are built by CI from the same fat jar. The Linux binary needs glibc 2.34 or newer
+  (the highest versioned symbol it imports; checked with `objdump -T`).
 - Package and Maven `groupId` are `org.ds.tuifileman`.

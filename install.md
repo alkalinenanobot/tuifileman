@@ -36,8 +36,8 @@ Install it **globally, for all projects of the user**, not inside one project.
    - Preferred: the latest GitHub release, <https://github.com/alkalinenanobot/tuifileman/releases/latest>.
      Download the archive for the platform and its `.sha256` file:
      - Windows x64: `tuifileman-<version>-windows-x64.zip`
-     - Linux x64: `tuifileman-<version>-linux-x64.tar.gz`. It is built on a recent Ubuntu runner and links
-       dynamically against glibc, so it needs a glibc at least that new. If starting it fails with
+     - Linux x64: `tuifileman-<version>-linux-x64.tar.gz`. It links dynamically against glibc (0.3.0 needs
+       glibc 2.34 or newer; later releases may need a newer one). If starting it fails with
        `GLIBC_x.y not found`, treat the platform as unsupported (see "Other platforms").
    - If the user gave you a local directory instead (an unpacked release, the archive, or a source checkout),
      use that. For a source checkout see "Other platforms" below.
