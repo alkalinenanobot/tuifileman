@@ -6,7 +6,10 @@ Windows Terminal / PowerShell (native Windows console backend) and in Linux term
 mouse support and real filesystem browsing. Release builds (Windows and Linux x64, single native
 executable, no JDK needed): <https://github.com/alkalinenanobot/tuifileman/releases>.
 
-To have an AI agent install it, point the agent at [install.md](install.md).
+It is also a tool for AI agents: a fast command line (`copy`, `move`, `delete`, `diff`, `sync`, `find`, `rename`)
+for large directory trees, with dry runs, reviewable plans, JSON output and fixed exit codes. On a tree of 200
+thousand files it copied as fast as `robocopy /MT:32` and faster than FastCopy and Total Commander (see
+[PERF.md](PERF.md)). To have an AI agent install it, point the agent at [install.md](install.md).
 
 ## Current state
 
