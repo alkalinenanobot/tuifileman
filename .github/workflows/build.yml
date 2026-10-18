@@ -1,0 +1,85 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and test (fat jar)
+        run: mvn -B package
+
+      - name: Native exe
+        shell: pwsh
+        run: .\native\native.ps1 -Build
+
+      - name: Release zip
+        shell: pwsh
+        run: .\native\package.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tuifileman-windows-x64
+          path: |
+            target/release/*.zip
+            target/release/*.sha256
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and test (fat jar)
+        run: mvn -B package
+
+      - name: Native binary
+        run: bash native/native.sh
+
+      - name: Release archive
+        run: bash native/package.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tuifileman-linux-x64
+          path: |
+            target/release/*.tar.gz
+            target/release/*.sha256
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tuifileman-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.zip
+            *.tar.gz
+            *.sha256

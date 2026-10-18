@@ -1,0 +1,17 @@
+# Changelog
+
+## 0.3.0 - first public release
+
+- Two-panel terminal file manager (Lanterna 3.2.0-alpha1): menus, command palette, mouse, themes, bookmarks,
+  quick search by typing, file search (Alt+F7), column sorting.
+- Copy / move / delete as parallel background jobs with progress, conflict policy and an error list;
+  native `CopyFileEx` for big files on Windows.
+- Directory sync and compare (merge and mirror modes, content compare, `.gitignore` aware), file compare
+  (text and hex), multi-rename (F2) with undo, viewer (text, hex, image, PDF, video/audio previews through
+  external tools) and a text editor (F4), read-only archive browsing.
+- Scriptable command line (`diff`, `sync`, `copy`, `move`, `delete`, `rename`, `find`) with JSON/CSV output,
+  dry runs, reviewable plans and defined exit codes; `install-aliases` for `tfm-*` command names.
+- Release builds: Windows x64 zip and Linux x64 tar.gz, each a single GraalVM native executable with the licence
+  files and a SHA-256 file. Both are built by CI from the same fat jar. The Linux binary needs a glibc at least as
+  new as the one on the CI runner.
+- Package and Maven `groupId` are `org.ds.tuifileman`.
