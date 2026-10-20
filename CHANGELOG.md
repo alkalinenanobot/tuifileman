@@ -1,12 +1,18 @@
 # Changelog
 
+## 0.3.2
+
+- Invert marks of files only is `Alt+*` (terminals do not deliver `Ctrl+*`: Windows Terminal, GNOME Terminal and
+  others send a plain `*`).
+- "Invert marks" and "Invert marks (files only)" are in the Commands menu, so the command palette finds them.
+
 ## 0.3.1
 
 - `Ctrl+C` / `Ctrl+K`: copy the names / full paths of the marked entries (or the one under the cursor) to the
   system clipboard.
 - Run command (`Ctrl+O`): the name of the single marked entry, or the one under the cursor, is pre-filled (quoted
   when needed) and acts as selected text.
-- `*` inverts the marks of all entries (folders included), `Alt+*` only of files. `*` no longer starts quick search.
+- `*` inverts the marks of all entries (folders included), `Ctrl+*` only of files. `*` no longer starts quick search.
 
 ## 0.3.0 - first public release
 

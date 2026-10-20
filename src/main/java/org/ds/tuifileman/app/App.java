@@ -337,6 +337,8 @@ public final class App {
                         new MenuBar.Item("Compare files", "Ctrl+F3", App::compareFiles),
                         new MenuBar.Item("Synchronize directories", "Ctrl+F9", App::directorySync),
                         new MenuBar.Item("Find files...", "Alt+F7", App::findFiles),
+                        new MenuBar.Item("Invert marks", "*", app -> app.panel().invertMarks(true)),
+                        new MenuBar.Item("Invert marks (files only)", "Alt+*", app -> app.panel().invertMarks(false)),
                         new MenuBar.Item("Copy name(s) to clipboard", "Ctrl+C", app -> app.copyToClipboard(false)),
                         new MenuBar.Item("Copy full path(s) to clipboard", "Ctrl+K", app -> app.copyToClipboard(true)),
                         new MenuBar.Item("Undo last rename", "Ctrl+Z", App::undoRename),
