@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- `Ctrl+C` / `Ctrl+K`: copy the names / full paths of the marked entries (or the one under the cursor) to the
+  system clipboard.
+- Run command (`Ctrl+O`): the name of the single marked entry, or the one under the cursor, is pre-filled (quoted
+  when needed) and acts as selected text.
+- `*` inverts the marks of all entries (folders included), `Ctrl+*` only of files. `*` no longer starts quick search.
+
 ## 0.3.0 - first public release
 
 - Two-panel terminal file manager (Lanterna 3.2.0-alpha1): menus, command palette, mouse, themes, bookmarks,

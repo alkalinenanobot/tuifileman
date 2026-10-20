@@ -45,6 +45,24 @@ final class RunCommand {
         return WINDOWS ? "cmd" : "bash";
     }
 
+    /**
+     * A file name as a command-line word: unchanged when it is made of plain characters, in double quotes when
+     * it has a space or a character a shell treats specially (cmd, PowerShell and bash all accept that). A name
+     * with a double quote itself (Unix only) is left alone: no quoting works in every shell.
+     */
+    static String quoteName(String name) {
+        if (name.indexOf('"') >= 0) {
+            return name;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!Character.isLetterOrDigit(c) && "_.-@+,/\\".indexOf(c) < 0) {
+                return '"' + name + '"';
+            }
+        }
+        return name;
+    }
+
     /** Built-in shells that exist on this machine, then the ones from {@code [run] shell.NAME} in the INI. */
     static List<Shell> shells() {
         List<Shell> shells = new ArrayList<>();

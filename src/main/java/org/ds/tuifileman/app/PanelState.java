@@ -181,6 +181,18 @@ public final class PanelState {
         }
     }
 
+    /** Inverts the marks of all entries (not ".."); directories are skipped when {@code includeDirectories} is false. */
+    public void invertMarks(boolean includeDirectories) {
+        for (FileEntry entry : entries) {
+            if ("..".equals(entry.name()) || (entry.directory() && !includeDirectories)) {
+                continue;
+            }
+            if (!marked.remove(entry.path())) {
+                marked.add(entry.path());
+            }
+        }
+    }
+
     /** Marked entries, or the entry under the cursor when nothing is marked. */
     public List<FileEntry> targets() {
         List<FileEntry> result = new ArrayList<>();

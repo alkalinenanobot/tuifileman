@@ -97,6 +97,24 @@ class PanelStateTest {
     }
 
     @Test
+    void invertMarksFlipsEveryEntryExceptTheParentAndOptionallySkipsDirectories() throws Exception {
+        PanelState state = panel();
+        state.selectName("apple.txt", ROWS);
+        state.toggleMark(ROWS, false);
+        state.invertMarks(true);
+        assertFalse(state.markedOrAll().isEmpty());
+        assertTrue(state.markedOrAll().stream().noneMatch(e -> e.name().equals("apple.txt")));
+        assertTrue(state.markedOrAll().stream().anyMatch(FileEntry::directory), "directories are inverted too");
+        assertTrue(state.markedOrAll().stream().noneMatch(e -> e.name().equals("..")));
+        state.invertMarks(true);
+        assertEquals(List.of("apple.txt"), state.markedOrAll().stream().map(FileEntry::name).toList());
+        state.clearMarks();
+        state.invertMarks(false);
+        assertTrue(state.markedOrAll().stream().noneMatch(FileEntry::directory), "files only");
+        assertEquals(state.markedCount(), state.markedOrAll().size());
+    }
+
+    @Test
     void targetsAreTheMarkedEntriesOrTheOneUnderTheCursor() throws Exception {
         PanelState state = panel();
         assertTrue(state.targets().isEmpty(), "the cursor starts on ..");

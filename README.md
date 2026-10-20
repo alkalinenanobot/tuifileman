@@ -30,7 +30,8 @@ Working:
   `..` or `Backspace` leaves. tar/7z are not supported yet.
 - Copy/move with one item accept a new name: `F6` + `b.bat` renames, `F5` + `b.bat`
   copies in place (a trailing `\` or `/` means "a new folder").
-- Multi-select (Space marks and moves down, Insert marks in place); double-click
+- Multi-select (Space marks and moves down, Insert marks in place, `*` inverts the
+  marks of all entries including folders, `Ctrl+*` only of files); double-click
   opens.
 - Copy (F5) / move (F6) / delete (F8) run as background jobs with a progress
   window (Cancel button or Esc).
@@ -232,9 +233,9 @@ Needs a JDK 17+ and Maven. The console backend is JNA with the Win32 API on Wind
 terminal on Linux.
 
 ```powershell
-mvn package                                  # fat jar: target\tuifileman-0.3.0.jar (runs the JUnit tests first)
+mvn package                                  # fat jar: target\tuifileman-0.3.1.jar (runs the JUnit tests first)
 mvn test                                     # tests only
-java -jar target\tuifileman-0.3.0.jar
+java -jar target\tuifileman-0.3.1.jar
 .\run-lanterna.ps1 -Check                    # dev run without Maven: compile only (-Check) or compile and start
 .\native\native.ps1 -Build                   # GraalVM native exe from the fat jar: target\dist\tuifileman.exe (single file)
 .\native\package.ps1                         # release zip + SHA-256 in target\release
@@ -267,6 +268,9 @@ navigate, `Enter` (or double-click) opens a directory, or a file (an archive too
 text is the new name in that folder, so `F6` + `b.bat` renames and `F5` + `b.bat` copies in place; end with `\` or `/` to force a new folder), `F7` mkdir, `F8` delete,
 `Alt+F1`/`Alt+F2` change drive (left/right), `Ctrl+L` go to a typed path,
 `Ctrl+D` bookmarks (`Enter` go, `Insert` add current dir, `Delete` remove),
+`Ctrl+C` copies the names of the marked entries (or the one under the cursor) to the
+system clipboard, one per line, `Ctrl+K` their full paths (not inside an archive); both
+are in the Commands menu and the palette too,
 `Ctrl+O` run command: a Win+R style dialog with a shell drop-down (`cmd`,
 `powershell`, `pwsh` and `wsl` when installed, plus `[run] shell.NAME` entries
 from `config.ini`) and a command box; `Alt+Up`/`Alt+Down` change the shell
@@ -274,7 +278,9 @@ from anywhere in the dialog, `Up`/`Down` in the command box recall earlier comma
 (`run-history.txt` next to the INI file). The command starts in a separate
 terminal window in the active panel's folder, and the window stays open
 afterwards (checkbox / `[run] keep_open`); an empty command just opens the
-shell there. No embedded terminal. Commands are passed through unchanged
+shell there. When exactly one entry is marked (or none, and the cursor is on one) its
+name is pre-filled, double-quoted if it needs it, and counts as selected: a printable
+first key replaces it, `Home`/`End`/arrows keep it for editing. No embedded terminal. Commands are passed through unchanged
 (PowerShell and WSL receive them Base64-encoded), so quotes, `&` and `|` work;
 `wsl` runs them in `bash -l`,
 `F2` multi-rename (marked items, or everything in the directory; masks,

@@ -17,7 +17,7 @@ import java.util.function.Predicate;
  * own copy. Windows: {@code clip.exe} and PowerShell. Linux: wl-copy/wl-paste (Wayland), xclip or xsel (X11), and in
  * WSL the Windows tools through interop.
  */
-final class SystemClipboard {
+public final class SystemClipboard {
     private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase().contains("win");
     private static final List<String> POWERSHELL_PASTE = List.of("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
             "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Console]::Out.Write((Get-Clipboard -Raw))");
@@ -72,10 +72,11 @@ final class SystemClipboard {
         return false;
     }
 
-    static void set(String text) {
+    /** Puts the text on the clipboard; false when there is no clipboard tool or it failed. */
+    public static boolean set(String text) {
         Tool tool = tool();
         if (tool == null) {
-            return;
+            return false;
         }
         try {
             Process process = new ProcessBuilder(tool.copy())
@@ -87,11 +88,15 @@ final class SystemClipboard {
             }
             if (!process.waitFor(5, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
+                return false;
             }
+            return process.exitValue() == 0;
         } catch (IOException e) {
-            // no clipboard tool: the editor keeps its own copy
+            // no clipboard tool: the caller keeps its own copy or tells the user
+            return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return false;
         }
     }
 

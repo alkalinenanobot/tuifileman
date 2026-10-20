@@ -295,6 +295,8 @@ public final class App {
         commands.put(Key.of(KeyType.F8), App::deleteSelected);
         commands.put(Key.ch(' '), app -> app.panel().toggleMark(app.visibleRows(), true));
         commands.put(Key.of(KeyType.Insert), app -> app.panel().toggleMark(app.visibleRows(), false));
+        commands.put(Key.ch('*'), app -> app.panel().invertMarks(true));
+        commands.put(new Key(KeyType.Character, '*', true, false), app -> app.panel().invertMarks(false));
         commands.put(Key.of(KeyType.F9), app -> app.menuBar.toggle());
         commands.put(Key.ctrl('p'), app -> app.palette.open());
         commands.put(new Key(KeyType.F9, null, true, false), App::directorySync);
@@ -308,6 +310,8 @@ public final class App {
         commands.put(Key.ctrl('l'), App::goToPath);
         commands.put(Key.ctrl('d'), App::showBookmarks);
         commands.put(Key.ctrl('o'), App::runCommand);
+        commands.put(Key.ctrl('c'), app -> app.copyToClipboard(false));
+        commands.put(Key.ctrl('k'), app -> app.copyToClipboard(true));
         commands.put(new Key(KeyType.F1, null, false, true), app -> app.changeDrive(0));
         commands.put(new Key(KeyType.F2, null, false, true), app -> app.changeDrive(1));
     }
@@ -333,6 +337,8 @@ public final class App {
                         new MenuBar.Item("Compare files", "Ctrl+F3", App::compareFiles),
                         new MenuBar.Item("Synchronize directories", "Ctrl+F9", App::directorySync),
                         new MenuBar.Item("Find files...", "Alt+F7", App::findFiles),
+                        new MenuBar.Item("Copy name(s) to clipboard", "Ctrl+C", app -> app.copyToClipboard(false)),
+                        new MenuBar.Item("Copy full path(s) to clipboard", "Ctrl+K", app -> app.copyToClipboard(true)),
                         new MenuBar.Item("Undo last rename", "Ctrl+Z", App::undoRename),
                         sep,
                         new MenuBar.Item("Bookmarks", "Ctrl+D", App::showBookmarks),
@@ -388,7 +394,9 @@ public final class App {
                         Ctrl+D           bookmarks       F12       problem list
                         Alt+F1 / Alt+F2  change drive    F10       quit
                         Space / Insert   mark            Ctrl+O    run command
-                        type letters     quick search    Ctrl+PgDn  open as archive
+                        *                invert marks    Ctrl+PgDn  open as archive
+                        Ctrl+*           invert (files)  Ctrl+C    copy name(s)
+                        type letters     quick search    Ctrl+K    copy path(s)
                         Alt+F7           find files
                         click a column header: sort by it, click again: reverse (.EXT = extension)""")
                 .addButton(MessageDialogButton.Close)
@@ -425,7 +433,11 @@ public final class App {
                 .indexOf(config.text("run.shell", RunCommand.defaultShell()));
         shellBox.setSelectedIndex(Math.max(0, configured));
         int width = Math.max(30, Math.min(70, screen.getTerminalSize().getColumns() - 16));
-        TextBox command = new TextBox(new TerminalSize(width, 1), "");
+        List<FileEntry> picked = target.targets();
+        String prefill = picked.size() == 1 ? RunCommand.quoteName(picked.get(0).name()) : "";
+        TextBox command = new TextBox(new TerminalSize(width, 1), prefill);
+        command.setCaretPosition(prefill.length());
+        boolean[] armed = {!prefill.isEmpty()};
         com.googlecode.lanterna.gui2.CheckBox keepOpen = new com.googlecode.lanterna.gui2.CheckBox(
                 RunCommand.WINDOWS ? "Keep the window open after the command" : "Wait for Enter after the command");
         keepOpen.setChecked(config.flag("run.keep_open", true));
@@ -441,6 +453,13 @@ public final class App {
                     int count = shells.size();
                     shellBox.setSelectedIndex((shellBox.getSelectedIndex() + (type == KeyType.ArrowDown ? 1 : count - 1)) % count);
                     return true;
+                }
+                if (armed[0] && getFocusedInteractable() == command) {
+                    // the pre-filled name counts as selected: a printable first key replaces it, any other key keeps it
+                    armed[0] = false;
+                    if (replacesSelection(key, false)) {
+                        command.setText("");
+                    }
                 }
                 if (getFocusedInteractable() == command) {
                     if (type == KeyType.Enter) {
@@ -559,6 +578,33 @@ public final class App {
                 // the terminal is in its normal line mode here: wait for the line
             }
         } catch (IOException ignored) { }
+    }
+
+    /**
+     * Ctrl+C / Ctrl+K: the names or full paths of the marked entries (the one under the cursor when none is
+     * marked), one per line, on the system clipboard. Shift+Enter would be the Total Commander way, but Windows
+     * Terminal does not report Shift with Enter.
+     */
+    private void copyToClipboard(boolean fullPath) {
+        PanelState source = panel();
+        List<FileEntry> items = source.targets();
+        if (items.isEmpty()) {
+            status = "Nothing to copy";
+            return;
+        }
+        if (fullPath && source.isVirtual()) {
+            status = "Inside an archive there is no real path to copy (names work)";
+            return;
+        }
+        String text = items.stream().map(item -> fullPath ? item.path().toString() : item.name())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        String what = fullPath ? "path" : "name";
+        if (!org.ds.tuifileman.edit.SystemClipboard.set(text)) {
+            status = RunCommand.WINDOWS ? "The system clipboard is not available"
+                    : "The system clipboard is not available (install wl-clipboard, xclip or xsel)";
+            return;
+        }
+        status = items.size() == 1 ? "Copied " + what + ": " + text : "Copied " + items.size() + " " + what + "s";
     }
 
     /** Go to a typed path - also the way into directories that can be entered but not listed. */
@@ -928,12 +974,19 @@ public final class App {
                     return;
                 }
                 armed[0] = false;
-                if (key.getKeyType() == KeyType.Character && !key.isCtrlDown() && !key.isAltDown()
-                        && key.getCharacter() != '\\' && key.getCharacter() != '/') {
+                if (replacesSelection(key, true)) {
                     box.setText("");
                 }
             }
         });
+    }
+
+    /** True for a printable key that replaces a pre-filled text; a path separator (when asked) means "append". */
+    private static boolean replacesSelection(KeyStroke key, boolean separatorAppends) {
+        if (key.getKeyType() != KeyType.Character || key.isCtrlDown() || key.isAltDown()) {
+            return false;
+        }
+        return !(separatorAppends && (key.getCharacter() == '\\' || key.getCharacter() == '/'));
     }
 
     /** Enter in the text box confirms the dialog (Lanterna would only move focus to the OK button). */
@@ -1715,7 +1768,7 @@ public final class App {
         PanelState target = panel();
         boolean plain = key.getKeyType() == KeyType.Character && !key.isCtrlDown() && !key.isAltDown()
                 && key.getCharacter() != null && !Character.isISOControl(key.getCharacter());
-        if (plain && (target.searching() || key.getCharacter() != ' ')) {
+        if (plain && (target.searching() || (key.getCharacter() != ' ' && key.getCharacter() != '*'))) {
             target.searchAppend(key.getCharacter(), visibleRows());
             return true;
         }
