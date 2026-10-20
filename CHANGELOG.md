@@ -6,7 +6,7 @@
   system clipboard.
 - Run command (`Ctrl+O`): the name of the single marked entry, or the one under the cursor, is pre-filled (quoted
   when needed) and acts as selected text.
-- `*` inverts the marks of all entries (folders included), `Ctrl+*` only of files. `*` no longer starts quick search.
+- `*` inverts the marks of all entries (folders included), `Alt+*` only of files. `*` no longer starts quick search.
 
 ## 0.3.0 - first public release
 

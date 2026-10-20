@@ -31,7 +31,7 @@ Working:
 - Copy/move with one item accept a new name: `F6` + `b.bat` renames, `F5` + `b.bat`
   copies in place (a trailing `\` or `/` means "a new folder").
 - Multi-select (Space marks and moves down, Insert marks in place, `*` inverts the
-  marks of all entries including folders, `Ctrl+*` only of files); double-click
+  marks of all entries including folders, `Alt+*` only of files); double-click
   opens.
 - Copy (F5) / move (F6) / delete (F8) run as background jobs with a progress
   window (Cancel button or Esc).

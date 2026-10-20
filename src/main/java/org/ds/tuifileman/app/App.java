@@ -296,7 +296,7 @@ public final class App {
         commands.put(Key.ch(' '), app -> app.panel().toggleMark(app.visibleRows(), true));
         commands.put(Key.of(KeyType.Insert), app -> app.panel().toggleMark(app.visibleRows(), false));
         commands.put(Key.ch('*'), app -> app.panel().invertMarks(true));
-        commands.put(new Key(KeyType.Character, '*', true, false), app -> app.panel().invertMarks(false));
+        commands.put(new Key(KeyType.Character, '*', false, true), app -> app.panel().invertMarks(false));
         commands.put(Key.of(KeyType.F9), app -> app.menuBar.toggle());
         commands.put(Key.ctrl('p'), app -> app.palette.open());
         commands.put(new Key(KeyType.F9, null, true, false), App::directorySync);
@@ -395,7 +395,7 @@ public final class App {
                         Alt+F1 / Alt+F2  change drive    F10       quit
                         Space / Insert   mark            Ctrl+O    run command
                         *                invert marks    Ctrl+PgDn  open as archive
-                        Ctrl+*           invert (files)  Ctrl+C    copy name(s)
+                        Alt+*            invert (files)  Ctrl+C    copy name(s)
                         type letters     quick search    Ctrl+K    copy path(s)
                         Alt+F7           find files
                         click a column header: sort by it, click again: reverse (.EXT = extension)""")
@@ -1742,7 +1742,6 @@ public final class App {
         if (handleSearchKey(key)) {
             return;
         }
-        
         Command command = commands.get(Key.from(key));
         if (command != null) {
             command.execute(this);
