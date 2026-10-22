@@ -125,6 +125,7 @@ public final class App {
         Terminal terminal = openTerminal();
         if (terminal instanceof com.googlecode.lanterna.terminal.ansi.StreamBasedTerminal stream) {
             stream.getInputDecoder().addProfile(enterKeys(terminal instanceof UnixTty));
+            stream.getInputDecoder().addProfile(SgrMousePattern.PROFILE);
         }
         return terminal;
     }
@@ -185,6 +186,27 @@ public final class App {
         return new UnixTty(input, buffered, utf8, ctrlC);
     }
 
+    /** A screen that switches the terminal to SGR mouse reports whenever it is (re)started; see {@link SgrMousePattern}. */
+    private static final class MouseScreen extends TerminalScreen {
+        MouseScreen(Terminal terminal) throws IOException {
+            super(terminal);
+        }
+
+        @Override
+        public synchronized void startScreen() throws IOException {
+            super.startScreen();
+            System.out.print(SgrMousePattern.ENABLE);
+            System.out.flush();
+        }
+
+        @Override
+        public synchronized void stopScreen(boolean flushInput) throws IOException {
+            System.out.print(SgrMousePattern.DISABLE);
+            System.out.flush();
+            super.stopScreen(flushInput);
+        }
+    }
+
     /** Lanterna keeps the tty raw after stopScreen; a command that runs in this terminal needs echo and line editing. */
     private static final class UnixTty extends com.googlecode.lanterna.terminal.ansi.UnixTerminal {
         UnixTty(java.io.InputStream in, java.io.OutputStream out, java.nio.charset.Charset charset,
@@ -220,7 +242,7 @@ public final class App {
             unixLike.setMouseCaptureMode(MouseCaptureMode.CLICK_RELEASE_DRAG);
         }
         registerCommands();
-        try (Screen s = new TerminalScreen(terminal)) {
+        try (Screen s = new MouseScreen(terminal)) {
             screen = s;
             screen.startScreen();
             screen.setCursorPosition(null);

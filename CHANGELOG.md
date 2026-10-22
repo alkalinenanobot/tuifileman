@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Mouse: reports use xterm's SGR encoding, which is plain ASCII and has no column limit. Clicking in a terminal
+  wider than 94 columns (right panel of a maximised window) could type `[M#` into quick search, because Windows
+  Terminal split the old multi-byte coordinates and Lanterna took the first part for keys.
+
 ## 0.3.2
 
 - Invert marks of files only is `Alt+*` (terminals do not deliver `Ctrl+*`: Windows Terminal, GNOME Terminal and
