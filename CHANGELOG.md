@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.3
 
 - Mouse: reports use xterm's SGR encoding, which is plain ASCII and has no column limit. Clicking in a terminal
   wider than 94 columns (right panel of a maximised window) could type `[M#` into quick search, because Windows

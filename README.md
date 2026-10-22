@@ -233,9 +233,9 @@ Needs a JDK 17+ and Maven. The console backend is JNA with the Win32 API on Wind
 terminal on Linux.
 
 ```powershell
-mvn package                                  # fat jar: target\tuifileman-0.3.2.jar (runs the JUnit tests first)
+mvn package                                  # fat jar: target\tuifileman-0.3.3.jar (runs the JUnit tests first)
 mvn test                                     # tests only
-java -jar target\tuifileman-0.3.2.jar
+java -jar target\tuifileman-0.3.3.jar
 .\run-lanterna.ps1 -Check                    # dev run without Maven: compile only (-Check) or compile and start
 .\native\native.ps1 -Build                   # GraalVM native exe from the fat jar: target\dist\tuifileman.exe (single file)
 .\native\package.ps1                         # release zip + SHA-256 in target\release
