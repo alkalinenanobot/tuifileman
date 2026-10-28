@@ -56,7 +56,7 @@ Then:
 ```powershell
 tuifileman                                   # file manager in the current folder
 tuifileman D:\src D:\backup                  # optional start folders: tuifileman [left [right]]
-java -jar target\tuifileman-0.4.0.jar        # the same from the jar
+java -jar target\tuifileman-0.4.1.jar        # the same from the jar
 tuifileman diff D:\a D:\b                    # command line mode, see below
 ```
 
@@ -408,9 +408,9 @@ Needs a JDK 17+ and Maven. The console backend is JNA with the Win32 API on Wind
 terminal on Linux.
 
 ```powershell
-mvn package                                  # fat jar: target\tuifileman-0.4.0.jar (runs the JUnit tests first)
+mvn package                                  # fat jar: target\tuifileman-0.4.1.jar (runs the JUnit tests first)
 mvn test                                     # tests only
-java -jar target\tuifileman-0.4.0.jar
+java -jar target\tuifileman-0.4.1.jar
 .\native\native.ps1 -Build                   # GraalVM native exe from the fat jar: target\dist\tuifileman.exe (single file)
 .\native\package.ps1                         # release zip + SHA-256 in target\release
 ```

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - Zip files written with backslash separators (`dir\file.txt`, as PowerShell 5.1 `Compress-Archive` does) showed as one
   flat list of names with backslashes that could not be opened or copied. They browse as normal folders now.

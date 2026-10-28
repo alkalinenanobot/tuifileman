@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.ds.tuifileman</groupId>
     <artifactId>tuifileman</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.1</version>
     <name>tuifileman</name>
     <description>A two-panel terminal file manager with directory sync, file compare and multi-rename, plus a scriptable command line.</description>
     <url>https://github.com/alkalinenanobot/tuifileman</url>
@@ -82,7 +82,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
             </plugin>
-            <!-- Runnable fat jar: java -jar target/tuifileman-0.4.0.jar (run it in a real terminal) -->
+            <!-- Runnable fat jar: java -jar target/tuifileman-0.4.1.jar (run it in a real terminal) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
