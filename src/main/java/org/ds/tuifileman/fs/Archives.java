@@ -58,7 +58,10 @@ public final class Archives {
         return open.system.getRootDirectories().iterator().next();
     }
 
-    private static FileSystem newSystem(Path file) throws IOException {
+    private static FileSystem newSystem(Path realFile) throws IOException {
+        // Names with backslash separators (some Windows tools) are corrected on the fly, see PatchedZip.
+        ZipNames.Fix fix = ZipNames.find(realFile);
+        Path file = fix == null ? realFile : PatchedZip.wrap(realFile, fix);
         // Unix modes of the entries when the archive has them; names that are not valid UTF-8 fall back to Latin-1.
         Map<String, Object> env = new HashMap<>();
         env.put("enablePosixFileAttributes", "true");

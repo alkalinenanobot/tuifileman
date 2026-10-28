@@ -223,4 +223,19 @@ class ArchiveBrowseTest {
             Archives.release(rootPath);
         }
     }
+
+    @Test
+    void backslashSeparatorsOfWindowsToolsAreTreatedAsFolders() throws Exception {
+        Path archive = zip("win.zip", "app\\", "", "app\\sub\\", "", "app\\sub\\c.txt", "CCC", "app\\b.txt", "B");
+        Path rootPath = Archives.open(archive);
+        try {
+            assertEquals(List.of("..", "app"), DirectoryListing.list(rootPath).stream().map(FileEntry::name).toList());
+            Path app = rootPath.resolve("app");
+            assertEquals(List.of("..", "sub", "b.txt"),
+                    DirectoryListing.list(app).stream().map(FileEntry::name).toList());
+            assertEquals("CCC", Files.readString(app.resolve("sub").resolve("c.txt")));
+        } finally {
+            Archives.release(rootPath);
+        }
+    }
 }

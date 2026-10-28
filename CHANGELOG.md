@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Zip files written with backslash separators (`dir\file.txt`, as PowerShell 5.1 `Compress-Archive` does) showed as one
+  flat list of names with backslashes that could not be opened or copied. They browse as normal folders now.
+
 ## 0.4.0
 
 - F3 opened a text file as a hex dump when more than 5 % of its bytes were outside ASCII (Hungarian, Cyrillic, CJK,
