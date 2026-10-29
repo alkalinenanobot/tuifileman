@@ -26,9 +26,9 @@ public final class Cli {
     }
 
     static final String NAME = "tuifileman";
-    static final String VERSION = "0.4.2";
+    static final String VERSION = "0.5.0";
     private static final Set<String> IMPLEMENTED = Set.of("diff", "compare", "copy", "move", "delete", "sync", "rename", "find",
-            AliasCommand.COMMAND);
+            "cat", AliasCommand.COMMAND);
     /** Planned commands: recognised so that a typo or an early try gets a clear message, not a folder error. */
     private static final Set<String> PLANNED = Set.of();
 
@@ -168,6 +168,7 @@ public final class Cli {
                 case "sync" -> new SyncCommand().run(args);
                 case "rename" -> new RenameCommand().run(args);
                 case "find" -> new FindCommand().run(args);
+                case "cat" -> new CatCommand().run(args);
                 case AliasCommand.COMMAND -> new AliasCommand().run(args);
                 case "help" -> {
                     help(args);
@@ -276,6 +277,7 @@ public final class Cli {
         out.println("  " + out.style(Style.ACCENT, "sync") + "      synchronize two folders (merge or mirror, with plans)");
         out.println("  " + out.style(Style.ACCENT, "rename") + "    multi-rename with masks, counter, search/replace and case (with undo)");
         out.println("  " + out.style(Style.ACCENT, "find") + "      find files by name patterns and content, optionally inside archives");
+        out.println("  " + out.style(Style.ACCENT, "cat") + "       write files, also single entries of an archive, to stdout");
         out.println("  " + out.style(Style.ACCENT, "install-aliases") + "  make tfm-diff.exe, tfm-copy.exe ... next to the program");
         out.println();
         out.println("Run '" + NAME + " COMMAND --help' for the options of a command. "

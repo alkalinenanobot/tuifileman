@@ -9,10 +9,11 @@ describes what the tool is, when it is worth having, and how to install it. Huma
 `tuifileman` is a single native executable (Windows x64, Linux x64) with a two-panel terminal file manager and a
 scriptable command line:
 
-- `diff`: compare two folders. `sync`: merge or mirror two folders, with reviewable plans.
+- `diff`: compare two folders, or two files as a unified diff. `sync`: merge or mirror two folders, with reviewable plans.
 - `copy`, `move`, `delete`: parallel, with progress and per-file conflict handling.
 - `rename`: multi-rename with masks, counter, search/replace and undo. `find`: search names and content,
-  also inside archives.
+  also inside archives, with excludes and `.gitignore` support. `cat`: files to stdout. A file inside an archive is
+  named `ARCHIVE!/path` in `find`, `cat`, `diff` and as a `copy` source.
 
 Every command has a dry run (`-n`), machine-readable output (`-f json` or `jsonl`, `--format csv`) and fixed exit
 codes (0 ok/identical, 1 differences or, for `find`, no match, 2 usage error, 3 finished with file errors, 4 fatal,

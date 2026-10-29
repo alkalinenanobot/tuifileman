@@ -1,5 +1,7 @@
 package org.ds.tuifileman.cli;
 
+import org.ds.tuifileman.fs.ArchivePaths;
+import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.fs.Glob;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
@@ -37,7 +39,12 @@ final class Wildcards {
             if (!has(name) || has(parentText)) {
                 throw new Args.UsageException("wildcards are allowed in the last path segment only: " + argument);
             }
-            Path parent = Path.of(parentText).toAbsolutePath().normalize();
+            Path parent;
+            try {
+                parent = ArchivePaths.resolve(parentText).toAbsolutePath().normalize();
+            } catch (IOException e) {
+                throw new Args.UsageException(e.getMessage());
+            }
             Pattern regex = compile(name);
             List<Path> found = new ArrayList<>();
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(parent)) {
@@ -47,7 +54,7 @@ final class Wildcards {
                     }
                 }
             } catch (IOException e) {
-                throw new Args.UsageException("cannot read " + parent + ": " + e.getMessage());
+                throw new Args.UsageException("cannot read " + Archives.display(parent) + ": " + e.getMessage());
             }
             // Case-insensitive, and a fixed order for names that differ only in case (possible on Linux), so the
             // same command always sees the same order (rename numbers by it) whatever order the directory lists.

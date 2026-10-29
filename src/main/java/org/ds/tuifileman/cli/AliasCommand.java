@@ -16,7 +16,7 @@ import java.util.Locale;
  */
 final class AliasCommand implements Cli.Command {
     static final String COMMAND = "install-aliases";
-    static final List<String> NAMES = List.of("diff", "copy", "move", "delete", "sync", "rename", "find");
+    static final List<String> NAMES = List.of("diff", "copy", "move", "delete", "sync", "rename", "find", "cat");
 
     private enum Format { TEXT, JSON, NONE }
 

@@ -163,8 +163,22 @@ public final class DirCompare {
                                   AtomicBoolean cancel, AtomicInteger progress, IgnoreMatcher ignore,
                                   AtomicInteger ignored, Predicate<String> exclude, long toleranceMillis,
                                   Queue<Unreadable> unreadable) throws IOException {
-        Context context = new Context(recursive, contents, cancel, progress, ignored, exclude, toleranceMillis,
-                unreadable);
+        return scan(left, right, recursive, contents, false, cancel, progress, ignore, ignored, exclude,
+                toleranceMillis, unreadable);
+    }
+
+    /**
+     * As above; with {@code contents} and {@code contentVerdict} the status of two files is decided by their bytes
+     * alone: files that differ (in size, or in content when the sizes are equal) are {@link Status#DIFFERENT}
+     * whatever their times, instead of {@link Status#LEFT_NEWER} or {@link Status#RIGHT_NEWER}. A merge needs
+     * the direction, a report of differences does not.
+     */
+    public static List<Item> scan(Path left, Path right, boolean recursive, boolean contents, boolean contentVerdict,
+                                  AtomicBoolean cancel, AtomicInteger progress, IgnoreMatcher ignore,
+                                  AtomicInteger ignored, Predicate<String> exclude, long toleranceMillis,
+                                  Queue<Unreadable> unreadable) throws IOException {
+        Context context = new Context(recursive, contents, contents && contentVerdict, cancel, progress, ignored,
+                exclude, toleranceMillis, unreadable);
         ForkJoinPool pool = new ForkJoinPool(Parallel.threads(left, right));
         try {
             DirTask root = new DirTask(context, left, right, "", ignore);
@@ -181,9 +195,9 @@ public final class DirCompare {
     /** An entry the scan could not read; what is below it is missing on both sides of the result. */
     public record Unreadable(Path path, String reason) { }
 
-    private record Context(boolean recursive, boolean contents, AtomicBoolean cancel, AtomicInteger progress,
-                           AtomicInteger ignored, Predicate<String> exclude, long toleranceMillis,
-                           Queue<Unreadable> unreadable) { }
+    private record Context(boolean recursive, boolean contents, boolean contentVerdict, AtomicBoolean cancel,
+                           AtomicInteger progress, AtomicInteger ignored, Predicate<String> exclude,
+                           long toleranceMillis, Queue<Unreadable> unreadable) { }
 
     /** Both sides of one name; {@code skip} marks links and unreadable entries (skipped on both sides). */
     private static final class Pair {
@@ -285,11 +299,12 @@ public final class DirCompare {
                 slots.add(new Item(relative, ls, rs, Status.TYPE_MISMATCH));
             } else if (context.contents() && ls.size() == rs.size()) {
                 ContentTask task = new ContentTask(context.cancel(), pair.path[0], pair.path[1], ls, rs,
-                        context.toleranceMillis());
+                        context.toleranceMillis(), context.contentVerdict());
                 task.fork();
                 slots.add(new Pending(relative, ls, rs, task));
             } else {
-                slots.add(new Item(relative, ls, rs, byTime(ls, rs, false, context.toleranceMillis())));
+                slots.add(new Item(relative, ls, rs, context.contentVerdict() ? Status.DIFFERENT
+                        : byTime(ls, rs, false, context.toleranceMillis())));
             }
         }
 
@@ -334,20 +349,26 @@ public final class DirCompare {
         private final Side ls;
         private final Side rs;
         private final long toleranceMillis;
+        private final boolean contentVerdict;
 
-        ContentTask(AtomicBoolean cancel, Path left, Path right, Side ls, Side rs, long toleranceMillis) {
+        ContentTask(AtomicBoolean cancel, Path left, Path right, Side ls, Side rs, long toleranceMillis,
+                    boolean contentVerdict) {
             this.cancel = cancel;
             this.left = left;
             this.right = right;
             this.ls = ls;
             this.rs = rs;
             this.toleranceMillis = toleranceMillis;
+            this.contentVerdict = contentVerdict;
         }
 
         @Override
         protected Status compute() {
             try {
-                return sameBytes(left, right, cancel) ? Status.SAME : byTime(ls, rs, true, toleranceMillis);
+                if (sameBytes(left, right, cancel)) {
+                    return Status.SAME;
+                }
+                return contentVerdict ? Status.DIFFERENT : byTime(ls, rs, true, toleranceMillis);
             } catch (IOException e) {
                 return Status.DIFFERENT;
             }

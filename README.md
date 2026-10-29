@@ -56,7 +56,7 @@ Then:
 ```powershell
 tuifileman                                   # file manager in the current folder
 tuifileman D:\src D:\backup                  # optional start folders: tuifileman [left [right]]
-java -jar target\tuifileman-0.4.2.jar        # the same from the jar
+java -jar target\tuifileman-0.5.0.jar        # the same from the jar
 tuifileman diff D:\a D:\b                    # command line mode, see below
 ```
 
@@ -136,7 +136,8 @@ The panel title shows the drive and its volume label; the path line shortens lon
 directory, whatever its name: zip, jar, war, docx, xlsx, apk, epub, ... (read through the JDK zip support, no
 external tool). `Enter` still opens it with the system application. Inside, view (`F3`), compare (`Ctrl+F3`)
 and copy out (`F5`) work; anything that writes is refused. `..` or `Backspace` leaves. tar and 7z are not
-supported yet.
+supported yet. The [command line](#command-line-mode) reaches into archives too (`pack.zip!/dir/file`): `find`,
+`cat`, `diff` and `copy`.
 
 ### Viewer (`F3`)
 
@@ -279,8 +280,9 @@ warning. Every setting with its default and values is listed in [CONFIG.md](CONF
 ## Command line mode
 
 `tuifileman <command> ...` runs without the interface (jar or exe). Available: `diff`
-(read-only folder comparison, the scan behind Ctrl+F9), `copy`, `move`, `delete`, `sync`, `rename`
-(multi-rename), `find` (file search, the engine of Alt+F7) and `install-aliases`; `--version`.
+(read-only comparison of two folders, the scan behind Ctrl+F9, or of two files as a unified diff), `copy`, `move`,
+`delete`, `sync`, `rename` (multi-rename), `find` (file search, the engine of Alt+F7), `cat` (files to stdout) and
+`install-aliases`; `--version`.
 
 ```powershell
 tuifileman diff D:\a D:\b                       # coloured list on a terminal
@@ -304,6 +306,13 @@ tuifileman rename --undo undo.jsonl -y                                          
 tuifileman find D:\src -N "*.c,*.h" -T "TODO"   # names and content: path:line: text of the first match
 tuifileman find D:\src -N "*.c" -N "*.h" -d 3 -f json > hits.json   # the option may repeat; three levels deep
 tuifileman find D:\backup -A -N "*.log" -f csv  # also inside zip/jar/... archives
+tuifileman find D:\src -N bom.ini -x .git -x node_modules   # leave folders out (they are not entered)
+tuifileman find D:\src -g -x .git -T Vmo_factor # also obey the .gitignore files; .git itself needs -x .git
+tuifileman find D:\share\pack.zip -N "BuildID*" # one archive as the root: its entries are searched like a folder
+tuifileman cat "D:\share\pack.zip!/info/BuildID.txt"   # one entry of an archive to stdout, no extraction
+tuifileman copy "D:\share\pack.zip!/cfg/*.ini" D:\out  # entries of an archive as sources (read-only)
+tuifileman diff D:\a\app.ini E:\b\app.ini        # two files: a unified diff, like diff -u
+tuifileman diff -U 0 -w "D:\p.zip!/app.ini" E:\app.ini   # no context lines, ignore white space, one side inside a zip
 tuifileman diff D:\a E:\b -c -t 32 --stats -f none   # timing, items/s, threads and disk type
 tuifileman install-aliases                      # tfm-diff.exe, tfm-copy.exe ... (hard links) next to the exe
 tuifileman help copy                            # all options
@@ -312,6 +321,8 @@ tuifileman help copy                            # all options
 - `copy`/`move`/`delete` take several sources; `*` and `?` in the last path segment are expanded by
   the tool (cmd and PowerShell do not do it for exes). The destination is a folder and is created
   when missing. `-n/--dry-run` prints what would happen (including unresolved conflicts) and changes nothing.
+  `copy` never writes file contents to stdout (its stdout is the plan/result report): to print a file, or one entry
+  of an archive, use `cat`.
 - `-c/--on-conflict ask|overwrite|skip|keep-both|newer|larger|smaller|different` (copy/move).
   `ask` (default) prompts on a terminal (`o`/`s`/`k` for this file, `a`/`n`/`b`/`u` for all, `c` cancel);
   without a terminal an unresolved conflict aborts before anything is copied (exit 2).
@@ -332,7 +343,11 @@ tuifileman help copy                            # all options
 - `find FOLDER` (the engine of Alt+F7, same rules: `-N/--name` wildcards `*` `?`, several patterns separated
   by `,`/`;` or by repeating the option, a pattern without a wildcard matches names that contain it, names
   never case sensitive; `-T/--text` content, `--match-case`; `-A/--archives`; `-d/--depth N`, 1 = the folder
-  only; `--limit N`, `--sort`). The folder is required. Read-only. stdout: absolute paths, printed as they are
+  only; `--limit N`, `--sort`; `-x/--exclude GLOB`, `-g/--gitignore` and `--ignore-file FILE` as in `diff`:
+  an excluded or ignored folder is not entered, `.git` is only skipped with `-x .git`). FOLDER may also be an
+  archive file (zip, jar, docx ...; read through the JDK zip support, so it is searched as a folder and every
+  hit is `archive!/path`) or a folder inside one (`pack.zip!/dir`); `-A` is then not needed. The folder is
+  required. Read-only. stdout: absolute paths, printed as they are
   found (so a long search shows results at once and `find ... | head` stops early) in no fixed order, unless
   `--sort` waits for the end and lists them in path order (json is one document and always in path order); with `--text`
   `path:line: text`; `-f text|json|jsonl|csv|none` and `-S/--summary` work as in `diff` (json has `schema`,
@@ -342,6 +357,24 @@ tuifileman help copy                            # all options
   can be said about them (a search of a whole drive usually ends with 3), 4 error. Unlike the file manager the
   command has no 100,000-match cap. Quote patterns (`-N '*.c'`); PowerShell splits an unquoted `a,b`
   into two arguments, so quote it or repeat `-N`.
+- `diff LEFT RIGHT` with two files prints a unified diff (like `diff -u`, `--- left`/`+++ right`, `@@` hunks) on
+  stdout: `-U/--unified N` context lines (default 3), `-w/--ignore-space`, `-i/--ignore-case`, `-f none` for the
+  exit code only. It is the line comparison of the file manager's Ctrl+F3, so the same text detection applies
+  (UTF-8 with or without BOM, UTF-16, else the system code page; files over 32 MB, or with NUL bytes, are
+  binary and only reported as differing). Text that differs only in line endings or a final newline gives no
+  hunk but says so and exits 1 (unless `-w`/`-i`). Exit 0 identical, 1 different. A folder against a file is a
+  usage error; `--format json|jsonl|csv` and `-c`, `-s`, `-x` ... describe folders. With `-c/--content` on two
+  folders a file whose content differs is `different` whatever its time (without it a different time gives
+  `left-newer`/`right-newer`, the direction a merge needs).
+- `cat FILE...` writes the files to stdout byte for byte, one after the other, with nothing else on stdout (that is
+  why it is a command of its own and not a mode of `copy`, whose stdout carries the report). Errors go to stderr;
+  exit 0 ok, 3 some files could not be read, 4 none could, 2 usage.
+- `ARCHIVE!/path/inside` (a `!` followed by `/` or `\`) names an entry of a zip, jar, docx ... wherever a command
+  takes a path: `find`, `cat`, `diff` and the sources of `copy` (`*`/`?` work in the last segment; a folder inside
+  the archive is a valid source or search root). The file manager already copies out of archives with `F5`; this
+  is the same for the command line. It is what `find` prints for a hit. An archive inside an archive works
+  (`a.zip!/b.zip!/c.txt`; the inner one is extracted to a temporary file). Archives are read-only: `move`, `delete`
+  and `rename` refuse them (exit 2). In Git Bash and other shells where `!` or `\` are special, quote the path.
 - `diff`, `sync`, `copy` and `move` take `--time-tolerance T` (for `copy`/`move` it applies to
   `--on-conflict newer`): two files whose modified times differ by at most T have the
   same time. T is a whole number with an optional unit `s`, `m` or `h` (`2`, `90s`, `5m`, `1h`; no unit means
@@ -385,7 +418,7 @@ tuifileman help copy                            # all options
   items and bytes per second, the threads used and the drive type - and adds a `"stats"` object to the
   json/jsonl result. It is printed even with `-q`.
 - `install-aliases` creates `tfm-diff.exe`, `tfm-copy.exe`, `tfm-move.exe`, `tfm-delete.exe`, `tfm-sync.exe`,
-  `tfm-rename.exe` and `tfm-find.exe` next to the exe as hard links (no extra disk space; `--copy` where hard links are not
+  `tfm-rename.exe`, `tfm-find.exe` and `tfm-cat.exe` next to the exe as hard links (no extra disk space; `--copy` where hard links are not
   possible). A different file of that name is kept unless `--force`; `--remove` deletes only links to, or
   copies of, the program. A link keeps the build it was made from: run it again with `--force` after a rebuild.
 
@@ -408,9 +441,9 @@ Needs a JDK 17+ and Maven. The console backend is JNA with the Win32 API on Wind
 terminal on Linux.
 
 ```powershell
-mvn package                                  # fat jar: target\tuifileman-0.4.2.jar (runs the JUnit tests first)
+mvn package                                  # fat jar: target\tuifileman-0.5.0.jar (runs the JUnit tests first)
 mvn test                                     # tests only
-java -jar target\tuifileman-0.4.2.jar
+java -jar target\tuifileman-0.5.0.jar
 .\native\native.ps1 -Build                   # GraalVM native exe from the fat jar: target\dist\tuifileman.exe (single file)
 .\native\package.ps1                         # release zip + SHA-256 in target\release
 ```

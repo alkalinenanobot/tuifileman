@@ -6,6 +6,8 @@ import org.ds.tuifileman.app.DeleteJob;
 import org.ds.tuifileman.app.Job;
 import org.ds.tuifileman.cli.Console.Style;
 import org.ds.tuifileman.compare.TimeTolerance;
+import org.ds.tuifileman.fs.ArchivePaths;
+import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.model.FileEntry;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -107,7 +109,7 @@ final class OpCommand implements Cli.Command {
             } else if (given.isEmpty()) {
                 throw new Args.UsageException("expected at least one file or folder to delete");
             }
-            collect(given, sources);
+            collect(given, sources, kind == Kind.COPY);
         } catch (Args.UsageException e) {
             return Cli.usageError(kind.command, e.getMessage());
         }
@@ -117,7 +119,7 @@ final class OpCommand implements Cli.Command {
             Console.Out err = console.err();
             for (Path source : sources) {
                 if (!Files.exists(source, LinkOption.NOFOLLOW_LINKS)) {
-                    return fail(err, Exit.FATAL, "no such file or folder: " + source);
+                    return fail(err, Exit.FATAL, "no such file or folder: " + Archives.display(source));
                 }
                 if (delete && source.getParent() == null) {
                     return fail(err, Exit.USAGE, "refusing to delete a drive root: " + source);
@@ -131,6 +133,7 @@ final class OpCommand implements Cli.Command {
             }
             return execute(console, args, format, policy, tolerance, progressMode, sources, destination);
         } finally {
+            Archives.closeAll();
             console.close();
         }
     }
@@ -155,7 +158,7 @@ final class OpCommand implements Cli.Command {
         long started = System.nanoTime();
         Job job;
         Stats.begin(args.has("stats"), "scan");
-        Stats.roots(sources.get(0), destination);
+        Stats.roots(Archives.realDirectory(sources.get(0)), destination);
         try (Progress progress = Progress.start(progressMode, quiet, console, "Scanning", () -> snapshot(current.get()))) {
             if (kind == Kind.DELETE) {
                 DeleteJob deleteJob = new DeleteJob(entries);
@@ -350,7 +353,7 @@ final class OpCommand implements Cli.Command {
                 bytes = 0;
                 for (CopyJob.Planned planned : copy.planned()) {
                     boolean conflict = planned.action().equals("skip") && unresolved.contains(planned.target());
-                    lines.add(new Line(conflict ? "conflict" : planned.action(), planned.source().toString(),
+                    lines.add(new Line(conflict ? "conflict" : planned.action(), Archives.display(planned.source()),
                             planned.target().toString(), planned.size(), 1));
                     if (!planned.action().equals("skip")) {
                         items++;
@@ -483,21 +486,42 @@ final class OpCommand implements Cli.Command {
         }
     }
 
-    /** Literal paths stay as they are (an existing file with a "*" is impossible on Windows); wildcards expand. */
-    static void collect(List<String> given, List<Path> sources) throws Args.UsageException {
+    /**
+     * Literal paths stay as they are (an existing file with a "*" is impossible on Windows); wildcards expand.
+     * {@code archive.zip!/entry} names an entry of an archive; only {@code allowArchives} (copy) takes those,
+     * because an archive is read-only.
+     */
+    static void collect(List<String> given, List<Path> sources, boolean allowArchives) throws Args.UsageException {
         Set<Path> unique = new LinkedHashSet<>();
         for (String argument : given) {
+            List<Path> found;
             if (Wildcards.has(argument)) {
-                List<Path> matches = Wildcards.expand(argument);
-                if (matches.isEmpty()) {
+                found = Wildcards.expand(argument);
+                if (found.isEmpty()) {
                     throw new Args.UsageException("nothing matches " + argument);
                 }
-                unique.addAll(matches);
             } else {
-                unique.add(path(argument).toAbsolutePath().normalize());
+                found = List.of(source(argument).toAbsolutePath().normalize());
+            }
+            for (Path path : found) {
+                if (Archives.isVirtual(path) && !allowArchives) {
+                    throw new Args.UsageException("an archive is read-only, it can only be a source of copy: "
+                            + Archives.display(path));
+                }
+                unique.add(path);
             }
         }
         sources.addAll(unique);
+    }
+
+    private static Path source(String text) throws Args.UsageException {
+        try {
+            return ArchivePaths.resolve(text);
+        } catch (InvalidPathException e) {
+            throw new Args.UsageException("invalid path: " + text);
+        } catch (IOException e) {
+            throw new Args.UsageException(e.getMessage());
+        }
     }
 
     private static Format format(String text) throws Args.UsageException {
@@ -575,6 +599,10 @@ final class OpCommand implements Cli.Command {
         }
         out.println();
         out.println(out.style(Style.BOLD, "Wildcards") + "  * and ? in the last path segment are expanded by the tool");
+        if (kind == Kind.COPY) {
+            out.println(out.style(Style.BOLD, "Archives ") + "  a SOURCE may be inside a zip, jar, docx ...: C:\\a.zip!/dir/file or C:\\a.zip!/dir/*.txt "
+                    + "(read-only; to print a file instead use '" + Cli.NAME + " cat')");
+        }
         if (!delete) {
             out.println(out.style(Style.BOLD, "Conflicts") + "  without a terminal and without --on-conflict the run stops before "
                     + "copying anything (exit 2)");

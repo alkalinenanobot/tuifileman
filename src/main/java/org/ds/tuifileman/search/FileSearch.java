@@ -4,6 +4,7 @@ import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.fs.Entries;
 import org.ds.tuifileman.fs.Glob;
 import org.ds.tuifileman.fs.Parallel;
+import org.ds.tuifileman.ignore.IgnoreMatcher;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -69,7 +70,8 @@ public final class FileSearch {
     /**
      * What to look for.
      *
-     * @param root folder to search (a real folder; the search never starts inside an archive)
+     * @param root folder to search, or an archive file or a folder inside an archive (hits are then reported like
+     *     those of {@code inArchives}); an archive found below a folder is searched only with {@code inArchives}
      * @param names wildcard patterns separated by a comma or semicolon; a pattern without {@code *} or
      *     {@code ?} matches names that contain it; empty matches every name
      * @param inArchives also look into zip-like archives (an archive counts as a folder)
@@ -78,12 +80,21 @@ public final class FileSearch {
      * @param maxDepth folder levels to look at: 1 is {@code root} only, {@link #UNLIMITED} everything below
      * @param maxHits the search stops after this many hits (which ones is undefined: the folders are read in
      *     parallel); {@link #UNLIMITED} for none
+     * @param excluded tells whether an entry is left out, from its path below {@code root} with slashes; a folder
+     *     it excludes is not entered
+     * @param ignore {@code .gitignore}-style rules of the real folders; {@link IgnoreMatcher#NONE} for none
      */
     public record Query(Path root, String names, boolean inArchives, String text, boolean matchCase, int maxDepth,
-                        int maxHits) {
+                        int maxHits, Predicate<String> excluded, IgnoreMatcher ignore) {
         /** A query with the {@link #MAX_HITS} limit of the file manager. */
         public Query(Path root, String names, boolean inArchives, String text, boolean matchCase, int maxDepth) {
             this(root, names, inArchives, text, matchCase, maxDepth, MAX_HITS);
+        }
+
+        /** A query that leaves nothing out. */
+        public Query(Path root, String names, boolean inArchives, String text, boolean matchCase, int maxDepth,
+                     int maxHits) {
+            this(root, names, inArchives, text, matchCase, maxDepth, maxHits, relative -> false, IgnoreMatcher.NONE);
         }
     }
 
@@ -219,18 +230,40 @@ public final class FileSearch {
     /** Runs the whole search on the calling thread plus a pool of workers; returns when it is over. */
     public void run() {
         ForkJoinPool pool = null;
+        Path opened = null;
         try {
-            if (!Files.isDirectory(query.root())) {
-                error = "Not a folder: " + query.root();
+            Path root = query.root();
+            Path start;
+            String archive;
+            if (Files.isRegularFile(root)) {
+                try {
+                    opened = Archives.open(root);
+                } catch (IOException | RuntimeException e) {
+                    error = "Not a folder or a readable archive: " + root;
+                    return;
+                }
+                start = opened;
+                archive = Archives.display(root);
+            } else if (Archives.isVirtual(root) && Files.isDirectory(root)) {
+                start = root;
+                archive = Archives.display(Archives.origin(root));
+            } else if (Files.isDirectory(root)) {
+                start = root;
+                archive = null;
+            } else {
+                error = "Not a folder: " + root;
                 return;
             }
-            pool = new ForkJoinPool(Parallel.threads(query.root()));
-            pool.invoke(new FolderTask(query.root(), null, 1));
+            pool = new ForkJoinPool(Parallel.threads(start));
+            pool.invoke(new FolderTask(start, archive, 1, "", archive == null ? query.ignore() : IgnoreMatcher.NONE));
         } catch (RuntimeException e) {
             error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         } finally {
             if (pool != null) {
                 pool.shutdown();
+            }
+            if (opened != null) {
+                Archives.release(opened);
             }
             done = true;
         }
@@ -240,11 +273,16 @@ public final class FileSearch {
         private final Path folder;
         private final String archive;
         private final int depth;
+        /** This folder below the search root, with slashes; empty for the root. */
+        private final String relative;
+        private final IgnoreMatcher ignore;
 
-        FolderTask(Path folder, String archive, int depth) {
+        FolderTask(Path folder, String archive, int depth, String relative, IgnoreMatcher ignore) {
             this.folder = folder;
             this.archive = archive;
             this.depth = depth;
+            this.relative = relative;
+            this.ignore = ignore;
         }
 
         @Override
@@ -263,13 +301,20 @@ public final class FileSearch {
                     }
                     examined.incrementAndGet();
                     String name = String.valueOf(path.getFileName());
+                    if (ignore.ignored(name, attrs.isDirectory())) {
+                        return;
+                    }
+                    String entryPath = relative.isEmpty() ? name : relative + "/" + name;
+                    if (query.excluded().test(entryPath)) {
+                        return;
+                    }
                     boolean nameMatches = nameFilter.test(name);
                     if (Entries.isPlainDirectory(attrs)) {
                         if (nameMatches && textPattern == null) {
                             report(new Hit(archive, folderText, name, true, 0, attrs.lastModifiedTime().toMillis(), 0, ""));
                         }
                         if (depth < query.maxDepth()) {
-                            subs.add(new FolderTask(path, archive, depth + 1).fork());
+                            subs.add(new FolderTask(path, archive, depth + 1, entryPath, ignore.enter(name, path, path)).fork());
                         }
                         return;
                     }
@@ -341,7 +386,7 @@ public final class FileSearch {
                 return;
             }
             try {
-                new FolderTask(root, file.toString(), depth).invoke();
+                new FolderTask(root, file.toString(), depth, "", IgnoreMatcher.NONE).invoke();
             } finally {
                 Archives.release(root);
             }

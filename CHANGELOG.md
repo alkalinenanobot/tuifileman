@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- `find -x/--exclude GLOB`, `-g/--gitignore` and `--ignore-file FILE` (the options of `diff`): excluded or ignored folders
+  are not entered, e.g. `find . -N bom.ini -x .git`.
+- `find` takes an archive file (zip, jar, docx ...) or a folder inside one as its root (`find pack.zip -N "BuildID*"`).
+  An entry of an archive can be named `ARCHIVE!/path/in/it`, as `find` prints it, in `cat`, `diff`, `find` and as a
+  source of `copy` (also with `*`/`?`); `move`, `delete` and `rename` refuse archive entries (read-only).
+- New command `cat FILE...`: files, or single archive entries, to stdout unchanged (`tfm-cat` alias).
+- `diff` with two files prints a unified diff (`-U N`, `-w`, `-i`), reusing the line comparison of the file manager;
+  binary files only report whether they differ. Folders against a file are a usage error.
+- `diff -c` on folders reports a file whose content differs (other size, or equal size and other bytes) as
+  `different` instead of `left-newer`/`right-newer`; `sync -c` still names the newer side, which a merge needs.
+
 ## 0.4.2
 
 - The panel's size column is compact and right aligned (`9.1K`, `113K`, `373B`, `12M`): one letter units keep the last

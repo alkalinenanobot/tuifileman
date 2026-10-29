@@ -1,12 +1,17 @@
 package org.ds.tuifileman.cli;
 
 import org.ds.tuifileman.cli.Console.Style;
+import org.ds.tuifileman.compare.BinaryCompare;
 import org.ds.tuifileman.compare.DirCompare;
 import org.ds.tuifileman.compare.DirCompare.Item;
 import org.ds.tuifileman.compare.DirCompare.Side;
 import org.ds.tuifileman.compare.DirCompare.Status;
 import org.ds.tuifileman.compare.DirCompare.Unreadable;
+import org.ds.tuifileman.compare.TextCompare;
 import org.ds.tuifileman.compare.TimeTolerance;
+import org.ds.tuifileman.compare.UnifiedDiff;
+import org.ds.tuifileman.fs.ArchivePaths;
+import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.ignore.IgnoreMatcher;
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -49,6 +54,9 @@ final class DiffCommand implements Cli.Command {
                 .option("exclude", 'x', true)
                 .option("ignore-file", (char) 0, true)
                 .option("gitignore", 'g', false)
+                .option("unified", 'U', true)
+                .option("ignore-space", 'w', false)
+                .option("ignore-case", 'i', false)
                 .option("show-ignored", (char) 0, false)
                 .option("time-tolerance", (char) 0, true)
                 .option("threads", 't', true)
@@ -70,7 +78,7 @@ final class DiffCommand implements Cli.Command {
                 return help(args.get("theme", null));
             }
             if (args.positional().size() != 2) {
-                throw new Args.UsageException("expected two folders, got " + args.positional().size());
+                throw new Args.UsageException("expected two folders or two files, got " + args.positional().size());
             }
             format = format(args.get("format", "text"));
             only = statuses(args.all("only"));
@@ -95,6 +103,7 @@ final class DiffCommand implements Cli.Command {
         try {
             return compare(args, console, format, only, progressMode, excludes, tolerance);
         } finally {
+            Archives.closeAll();
             console.close();
         }
     }
@@ -112,13 +121,21 @@ final class DiffCommand implements Cli.Command {
         }
         for (Path root : List.of(left, right)) {
             if (!Files.exists(root)) {
-                return fatal(err, "no such folder: " + root);
+                return fatal(err, "no such file or folder: " + Archives.display(root));
             }
         }
+        if (Files.isRegularFile(left) && Files.isRegularFile(right)) {
+            return files(args, console, format, left, right);
+        }
         if (!Files.isDirectory(left) || !Files.isDirectory(right)) {
-            err.println(err.style(Style.ERROR, "error:") + " diff compares two folders; "
-                    + "to compare two files use the file manager (Ctrl+F3)");
+            err.println(err.style(Style.ERROR, "error:") + " diff compares two folders or two files, "
+                    + "not a folder and a file");
             return Exit.USAGE;
+        }
+        for (String option : List.of("unified", "ignore-space", "ignore-case")) {
+            if (args.has(option)) {
+                return Cli.usageError(COMMAND, "--" + option + " applies to the comparison of two files");
+            }
         }
 
         AtomicInteger examined = new AtomicInteger();
@@ -136,8 +153,9 @@ final class DiffCommand implements Cli.Command {
         try (Progress progress = Progress.start(progressMode, args.has("quiet"), console, "Comparing",
                 () -> Progress.Snapshot.counting(examined.get(), "entries"))) {
             Trace.at("scan starts");
-            scanned = DirCompare.scan(left, right, !args.has("shallow"), args.has("content"), Cli.CANCEL, examined,
-                    ignore, ignored, relative -> excluded(relative, excludes), tolerance, unreadable);
+            scanned = DirCompare.scan(left, right, !args.has("shallow"), args.has("content"), args.has("content"),
+                    Cli.CANCEL, examined, ignore, ignored, relative -> excluded(relative, excludes), tolerance,
+                    unreadable);
             Trace.at("scan done, " + examined.get() + " entries");
             Stats.phase("report");
             Stats.totals(examined.get(), 0);
@@ -200,11 +218,97 @@ final class DiffCommand implements Cli.Command {
         return different ? Exit.DIFFERENT : Exit.OK;
     }
 
+    /**
+     * The comparison of two files as a unified diff on stdout (like {@code diff -u}). Text files are compared line
+     * by line; anything else only tells whether the bytes differ. Exit 0 identical, 1 different.
+     */
+    private int files(Args args, Console console, Format format, Path left, Path right) {
+        Console.Out out = console.out();
+        Console.Out err = console.err();
+        if (format == Format.JSON || format == Format.JSONL || format == Format.CSV) {
+            return Cli.usageError(COMMAND, "--format json, jsonl and csv describe folders; two files give a unified "
+                    + "diff (text) or only the exit code (none)");
+        }
+        int context = 3;
+        try {
+            if (args.has("unified")) {
+                try {
+                    context = Integer.parseInt(args.get("unified", "").strip());
+                    if (context < 0) {
+                        throw new NumberFormatException();
+                    }
+                } catch (NumberFormatException e) {
+                    throw new Args.UsageException("--unified needs the number of context lines (0 or more)");
+                }
+            }
+        } catch (Args.UsageException e) {
+            return Cli.usageError(COMMAND, e.getMessage());
+        }
+        boolean ignoreSpace = args.has("ignore-space");
+        boolean ignoreCase = args.has("ignore-case");
+        boolean print = format == Format.TEXT;
+        String leftName = Archives.display(left);
+        String rightName = Archives.display(right);
+        try {
+            if (TextCompare.bothText(left, right)) {
+                TextCompare compare = TextCompare.load(left, right);
+                compare.compute(ignoreSpace, ignoreCase);
+                List<String> lines = UnifiedDiff.render(compare, context);
+                if (!lines.isEmpty()) {
+                    if (print) {
+                        out.println(out.style(Style.BOLD, "--- " + leftName));
+                        out.println(out.style(Style.BOLD, "+++ " + rightName));
+                        for (String line : lines) {
+                            out.println(out.style(switch (line.charAt(0)) {
+                                case '@' -> Style.ACCENT;
+                                case '+' -> Style.ADDED;
+                                case '-' -> Style.REMOVED;
+                                default -> Style.PLAIN;
+                            }, line));
+                        }
+                    }
+                    return finishFiles(out, Exit.DIFFERENT);
+                }
+                if (!ignoreSpace && !ignoreCase && bytesDiffer(left, right)) {
+                    if (print) {
+                        out.println("Files " + leftName + " and " + rightName
+                                + " differ only in line endings, a final newline or the encoding");
+                    }
+                    return finishFiles(out, Exit.DIFFERENT);
+                }
+                return Exit.OK;
+            }
+            if (bytesDiffer(left, right)) {
+                if (print) {
+                    out.println("Files " + leftName + " and " + rightName
+                            + " differ (binary, or too large for a line diff)");
+                }
+                return finishFiles(out, Exit.DIFFERENT);
+            }
+            return Exit.OK;
+        } catch (IOException e) {
+            return fatal(err, "cannot read: " + e.getMessage());
+        }
+    }
+
+    private static int finishFiles(Console.Out out, int exit) {
+        out.flush();
+        return exit;
+    }
+
+    private static boolean bytesDiffer(Path left, Path right) throws IOException {
+        try (BinaryCompare bytes = new BinaryCompare(left, right)) {
+            return bytes.find(0, true) >= 0;
+        }
+    }
+
     private static Path root(String text) throws Args.UsageException {
         try {
-            return Path.of(text).toAbsolutePath().normalize();
+            return ArchivePaths.resolve(text).toAbsolutePath().normalize();
         } catch (InvalidPathException e) {
             throw new Args.UsageException("invalid path: " + text);
+        } catch (IOException e) {
+            throw new Args.UsageException(e.getMessage());
         }
     }
 
@@ -505,7 +609,7 @@ final class DiffCommand implements Cli.Command {
         Console console = Console.open(Console.ColorMode.AUTO, Cli.theme(themeName));
         Console.Out out = console.out();
         String[][] options = {
-            {"-c, --content", "compare the bytes of files of equal size (default: size and time)"},
+            {"-c, --content", "compare the bytes of files (default: size and time); a file whose content differs is 'different' whatever its time"},
             {"-s, --shallow", "only the top level, no subfolders"},
             {"    --time-tolerance T", "times differing by at most T are the same time: 2s, 90s, 5m, 1h, 0 = exact (default: INI [sync] time_tolerance, else 2s)"},
             {"-o, --only STATUS,...", "show only these statuses (repeatable; the exit code still covers all)"},
@@ -514,7 +618,10 @@ final class DiffCommand implements Cli.Command {
             {"-g, --gitignore", "also obey the .gitignore files found in both folders (ignored folders are not scanned)"},
             {"    --ignore-file FILE", "obey the patterns of this ignore file, relative to the folders (repeatable)"},
             {"    --show-ignored", "list the ignored entries too (always listed in json, jsonl and csv)"},
-            {"-f, --format FORMAT", "text (default), json, jsonl, csv or none; written to stdout"},
+            {"-U, --unified N", "two files: context lines around each change (default 3)"},
+            {"-w, --ignore-space", "two files: ignore differences in white space"},
+            {"-i, --ignore-case", "two files: ignore differences in letter case"},
+            {"-f, --format FORMAT", "text (default), json, jsonl, csv or none; written to stdout (two files: text or none)"},
             {"-S, --summary", "only the counts"},
             {"-t, --threads N", "scan threads (default: chosen by disk type)"},
             {"    --stats", "timing, throughput, threads and disk type (stderr, and a \"stats\" object in json/jsonl)"},
@@ -525,7 +632,7 @@ final class DiffCommand implements Cli.Command {
             {"-h, --help", "this help"},
         };
         out.println(out.style(Style.TITLE, Cli.NAME + " diff") + " LEFT RIGHT  "
-                + out.style(Style.MUTED, "compare two folders (read-only)"));
+                + out.style(Style.MUTED, "compare two folders, or two files as a unified diff (read-only)"));
         out.println();
         out.println(out.style(Style.BOLD, "Options"));
         for (String[] option : options) {
@@ -535,6 +642,8 @@ final class DiffCommand implements Cli.Command {
         out.println(out.style(Style.BOLD, "Statuses") + "  only-left, only-right, left-newer, right-newer, "
                 + "different, same, type-mismatch, ignored");
         out.println(out.style(Style.BOLD, "Ignore  ") + "  -g does not skip .git (compared like any folder); use -x .git for that");
+        out.println(out.style(Style.BOLD, "Files   ") + "  two files give a unified diff (like diff -u); text only, binary files just say whether they differ");
+        out.println(out.style(Style.BOLD, "Archives") + "  either side may be inside a zip, jar, docx ...: C:\\a.zip!/dir/file");
         out.println(out.style(Style.BOLD, "Streams ") + "  result on stdout; progress, summary and errors on stderr");
         out.println(out.style(Style.BOLD, "Exit    ") + "  0 identical, 1 differences, 2 usage, 3 incomplete (unreadable folders),"
                 + " 4 error, 130 cancelled");

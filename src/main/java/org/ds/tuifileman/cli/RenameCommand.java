@@ -88,7 +88,7 @@ final class RenameCommand implements Cli.Command {
                     throw new Args.UsageException("nothing to rename: give files or wildcards (a folder's content: DIR\\*)");
                 }
                 settings = settings(args);
-                OpCommand.collect(args.positional(), sources);
+                OpCommand.collect(args.positional(), sources, false);
                 checkSources(sources);
                 if (args.has("undo-log") && Files.exists(logPath(args.get("undo-log", "")))) {
                     throw new Args.UsageException("the undo log exists already: " + args.get("undo-log", "")

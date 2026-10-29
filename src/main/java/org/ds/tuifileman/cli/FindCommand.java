@@ -1,12 +1,17 @@
 package org.ds.tuifileman.cli;
 
 import org.ds.tuifileman.cli.Console.Style;
+import org.ds.tuifileman.fs.ArchivePaths;
+import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.fs.Glob;
+import org.ds.tuifileman.ignore.IgnoreMatcher;
 import org.ds.tuifileman.search.FileSearch;
 import org.ds.tuifileman.search.FileSearch.Hit;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +36,9 @@ final class FindCommand implements Cli.Command {
                 .option("name", 'N', true)
                 .option("text", 'T', true)
                 .option("archives", 'A', false)
+                .option("exclude", 'x', true)
+                .option("ignore-file", (char) 0, true)
+                .option("gitignore", 'g', false)
                 .option("depth", 'd', true)
                 .option("match-case", (char) 0, false)
                 .option("limit", (char) 0, true)
@@ -50,6 +58,8 @@ final class FindCommand implements Cli.Command {
         int depth = FileSearch.UNLIMITED;
         int limit = FileSearch.UNLIMITED;
         Path root;
+        List<PathMatcher> excludes;
+        IgnoreMatcher ignore;
         try {
             args.parse(arguments);
             if (args.has("help")) {
@@ -73,6 +83,8 @@ final class FindCommand implements Cli.Command {
                 System.setProperty("tfm.threads", Integer.toString(threads));
             }
             root = root(args.positional().get(0));
+            excludes = DiffCommand.excludes(args.all("exclude"));
+            ignore = DiffCommand.ignores(args, root, root);
         } catch (Args.UsageException e) {
             return Cli.usageError(COMMAND, e.getMessage());
         }
@@ -81,17 +93,20 @@ final class FindCommand implements Cli.Command {
         try {
             Console.Out err = console.err();
             if (!Files.exists(root)) {
-                return fatal(err, "no such folder: " + root);
+                return fatal(err, "no such folder: " + Archives.display(root));
             }
-            if (!Files.isDirectory(root)) {
-                err.println(err.style(Style.ERROR, "error:") + " find searches a folder; " + root + " is a file");
+            if (!Files.isDirectory(root) && !Files.isRegularFile(root)) {
+                err.println(err.style(Style.ERROR, "error:") + " find searches a folder or an archive; "
+                        + Archives.display(root) + " is neither");
                 return Exit.USAGE;
             }
             String text = args.get("text", "");
             FileSearch.Query query = new FileSearch.Query(root, String.join(";", args.all("name")), args.has("archives"),
-                    text, args.has("match-case"), depth, limit);
+                    text, args.has("match-case"), depth, limit, relative -> DiffCommand.excluded(relative, excludes),
+                    ignore);
             return search(args, console, format, progressMode, query);
         } finally {
+            Archives.closeAll();
             console.close();
         }
     }
@@ -141,6 +156,11 @@ final class FindCommand implements Cli.Command {
             return Exit.CANCELLED;
         }
         if (search.error() != null) {
+            if (Files.isRegularFile(query.root())) {
+                err.println(err.style(Style.ERROR, "error:") + " find searches a folder or an archive; "
+                        + Archives.display(query.root()) + " is neither");
+                return Exit.USAGE;
+            }
             return fatal(err, search.error());
         }
         Stats.phase("report");
@@ -221,9 +241,11 @@ final class FindCommand implements Cli.Command {
 
     private static Path root(String text) throws Args.UsageException {
         try {
-            return Path.of(text).toAbsolutePath().normalize();
+            return ArchivePaths.resolve(text).toAbsolutePath().normalize();
         } catch (InvalidPathException e) {
             throw new Args.UsageException("invalid path: " + text);
+        } catch (IOException e) {
+            throw new Args.UsageException(e.getMessage());
         }
     }
 
@@ -364,6 +386,9 @@ final class FindCommand implements Cli.Command {
             {"-T, --text TEXT", "only files that contain this text (binary files are skipped; case-insensitive unless --match-case)"},
             {"    --match-case", "--text is case sensitive"},
             {"-A, --archives", "also search inside zip, jar, war, ear, apk, aar, whl, nupkg and vsix files (an archive counts as a folder)"},
+            {"-x, --exclude GLOB", "leave out matching names or paths below FOLDER (repeatable); a matching folder is not entered, e.g. -x .git -x node_modules"},
+            {"-g, --gitignore", "also leave out what the .gitignore files in FOLDER and below ignore (.git itself is not skipped: add -x .git)"},
+            {"    --ignore-file FILE", "extra ignore rules in .gitignore syntax (repeatable)"},
             {"-d, --depth N", "folder levels to search: 1 = only FOLDER itself (default: all)"},
             {"    --limit N", "stop after N matches (which ones is undefined: folders are read in parallel)"},
             {"    --sort", "list the matches in path order (waits for the end of the search; json is always in path order)"},
@@ -377,7 +402,7 @@ final class FindCommand implements Cli.Command {
             {"    --theme NAME", "dark, light, contrast or mc (default: from the INI file)"},
             {"-h, --help", "this help"},
         };
-        out.println(out.style(Style.TITLE, Cli.NAME + " find") + " FOLDER  "
+        out.println(out.style(Style.TITLE, Cli.NAME + " find") + " FOLDER|ARCHIVE  "
                 + out.style(Style.MUTED, "find files by name and content (read-only)"));
         out.println();
         out.println(out.style(Style.BOLD, "Options"));
