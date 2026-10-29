@@ -52,7 +52,7 @@ public final class Panel {
         if (showDate) {
             end = dateX - 1;
         }
-        int sizeX = end - 9;
+        int sizeX = end - 6;
         int nameX = rect.x() + 2;
         int nameWidth = sizeX - rect.x() - 4;
         // One cell is kept free behind the label for the sort arrow, so the label does not move when it appears.
@@ -113,7 +113,7 @@ public final class Panel {
         int headerRow = rect.headerRow();
         header(g, theme, sort, EntrySort.Key.NAME, c.nameX(), headerRow, "NAME");
         header(g, theme, sort, EntrySort.Key.EXTENSION, c.extensionX(), headerRow, EXTENSION_LABEL);
-        header(g, theme, sort, EntrySort.Key.SIZE, sizeX, headerRow, "SIZE");
+        header(g, theme, sort, EntrySort.Key.SIZE, sizeX + 1, headerRow, "SIZE");
         if (showDate) {
             header(g, theme, sort, EntrySort.Key.MODIFIED, dateX, headerRow, "MODIFIED");
         }
@@ -140,7 +140,7 @@ public final class Panel {
                     (highlighted && active ? ">" : " ") + (marked ? "*" : " ") + entry.name()
                             + (entry.directory() && !entry.name().equals("..") ? "/" : ""),
                     rowFg, rowBg);
-            text(g, sizeX, row, 9, entry.displaySize(),
+            text(g, sizeX, row, 5, entry.displaySize(),
                     highlighted ? theme.text() : theme.muted(), rowBg);
             if (showDate) {
                 text(g, dateX, row, 16, entry.displayModified(),

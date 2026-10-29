@@ -24,8 +24,17 @@ public record FileEntry(String name, Path path, boolean directory, long size, Fi
         return (readOnly ? "r" : "-") + (hidden ? "h" : "-") + (system ? "s" : "-") + (archive ? "a" : "-");
     }
 
+    /**
+     * Fixed width (5) for the panel's size column: number and a one letter unit, right aligned ("9.1K", "113K",
+     * "373B", "12M"). Every unit is one letter so the last digits always line up.
+     */
     public String displaySize() {
-        return link ? "<LNK>" : directory ? "<DIR>" : humanSize(size);
+        if (link || directory) {
+            return link ? "<LNK>" : "<DIR>";
+        }
+        String human = humanSize(size);
+        int space = human.indexOf(' ');
+        return String.format(Locale.ROOT, "%5s", human.substring(0, space) + human.charAt(space + 1));
     }
 
     public String displayModified() {

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The panel's size column is compact and right aligned (`9.1K`, `113K`, `373B`, `12M`): one letter units keep the last
+  digits in line, and the name column gets 3 more cells.
+
 ## 0.4.1
 
 - Zip files written with backslash separators (`dir\file.txt`, as PowerShell 5.1 `Compress-Archive` does) showed as one
