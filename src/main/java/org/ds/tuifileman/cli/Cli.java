@@ -26,7 +26,7 @@ public final class Cli {
     }
 
     static final String NAME = "tuifileman";
-    static final String VERSION = "0.4.1";
+    static final String VERSION = "0.4.2";
     private static final Set<String> IMPLEMENTED = Set.of("diff", "compare", "copy", "move", "delete", "sync", "rename", "find",
             AliasCommand.COMMAND);
     /** Planned commands: recognised so that a typo or an early try gets a clear message, not a folder error. */

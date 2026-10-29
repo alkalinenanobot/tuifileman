@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 - The panel's size column is compact and right aligned (`9.1K`, `113K`, `373B`, `12M`): one letter units keep the last
   digits in line, and the name column gets 3 more cells.
