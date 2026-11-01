@@ -1097,6 +1097,9 @@
       "glob": "multilang/lanterna-ui_en_US.properties"
     },
     {
+      "glob": "org/commonmark/internal/util/entities.txt"
+    },
+    {
       "bundle": "multilang.lanterna-ui"
     }
   ]

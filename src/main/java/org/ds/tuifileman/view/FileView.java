@@ -71,6 +71,10 @@ public final class FileView implements Closeable {
     private boolean backToImage;
     private boolean wantImage;
     private boolean pdf;
+    private RichText.Kind richKind;
+    private boolean richRendered;
+    private boolean wantRichToggle;
+    private byte[] styles;
     private long anchorPos;
     private long anchorLines;
     private int gutterDigits = 4;
@@ -124,6 +128,8 @@ public final class FileView implements Closeable {
         PdfDoc pdf = PdfDoc.supports(path) ? PdfDoc.open(path) : null;
         PreviewSource source = pdf != null ? pdf : MediaDoc.supports(path) ? MediaDoc.open(path) : null;
         boolean image = source != null || ImageView.supports(path);
+        RichText.Kind rich = pdf == null && !image ? RichText.kindOf(path) : null;
+        boolean raw = false;
         try {
             while (true) {
                 if (image) {
@@ -132,7 +138,8 @@ public final class FileView implements Closeable {
                         return result;
                     }
                 }
-                try (FileView view = pdf != null ? openPdfText(screen, theme, path, pdf) : open(screen, theme, path)) {
+                try (FileView view = pdf != null ? openPdfText(screen, theme, path, pdf)
+                        : rich != null && !raw ? openRich(screen, theme, path, rich) : open(screen, theme, path)) {
                     if (view == null) {
                         return "View: " + path.getFileName() + " is empty";
                     }
@@ -140,7 +147,12 @@ public final class FileView implements Closeable {
                     view.lineNumbers = config.flag("viewer.line_numbers", true);
                     view.wrap = config.flag("viewer.wrap", true);
                     view.backToImage = image;
+                    view.richKind = rich;
                     view.run();
+                    if (view.wantRichToggle) {
+                        raw = !raw;
+                        continue;
+                    }
                     if (!view.wantImage) {
                         return "Viewed " + path.getFileName();
                     }
@@ -180,6 +192,40 @@ public final class FileView implements Closeable {
         FileView view = open(screen, theme, path);
         if (view != null) {
             view.message = "No text view: " + problem;
+        }
+        return view;
+    }
+
+    /**
+     * An HTML or Markdown file as plain text (headings, lists, links ...). When it cannot be rendered the raw file
+     * is shown with the reason.
+     */
+    private static FileView openRich(Screen screen, Theme theme, Path path, RichText.Kind kind) throws IOException {
+        long size = Files.size(path);
+        String problem;
+        if (size > MAX_CONVERT_BYTES) {
+            problem = "the file is too large to render";
+        } else {
+            try {
+                TextOut.Result rendered = RichText.render(kind, Files.readAllBytes(path),
+                        TextCompare.fallbackCharset());
+                if (rendered.isEmpty()) {
+                    problem = "the document has no text";
+                } else {
+                    FileView view = new FileView(screen, theme, path, size, ByteSource.open(path),
+                            ByteSource.of(rendered.text().getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8, 0,
+                            kind.label, true, true, true);
+                    view.styles = rendered.byteStyles();
+                    view.richRendered = true;
+                    return view;
+                }
+            } catch (RuntimeException e) {
+                problem = "cannot render: " + (e.getMessage() == null ? e.toString() : e.getMessage());
+            }
+        }
+        FileView view = open(screen, theme, path);
+        if (view != null) {
+            view.message = "Raw text: " + problem;
         }
         return view;
     }
@@ -369,6 +415,12 @@ public final class FileView implements Closeable {
                         message = lineNumbers ? "" : "Line numbers off";
                     }
                     case 'w' -> toggleWrap();
+                    case 'r' -> {
+                        if (richKind != null) {
+                            wantRichToggle = true;
+                            return false;
+                        }
+                    }
                     default -> { }
                 }
             }
@@ -791,6 +843,7 @@ public final class FileView implements Closeable {
             }
             Draw.Expanded shown = Draw.expand(line.text(), from, to);
             String text = shown.text();
+            byte[] cs = expandStyles(line.text(), lineStyles(line.text(), line.start()), text);
             if (wrap) {
                 int[] starts = Wrap.rows(text, width);
                 int row = firstLine ? Math.min(textRow, starts.length - 1) : 0;
@@ -798,14 +851,14 @@ public final class FileView implements Closeable {
                     if (lineNumbers) {
                         drawGutter(g, y + 1, line.start(), row > 0);
                     }
-                    drawSlice(g, y + 1, text, starts[row], Wrap.end(starts, row, text.length()), shown.from(), shown.to());
+                    drawSlice(g, y + 1, text, cs, starts[row], Wrap.end(starts, row, text.length()), shown.from(), shown.to());
                 }
             } else {
                 if (lineNumbers) {
                     drawGutter(g, y + 1, line.start(), false);
                 }
                 int start = Math.min(hscroll, text.length());
-                drawSlice(g, y + 1, text, start, Math.min(text.length(), hscroll + width), shown.from(), shown.to());
+                drawSlice(g, y + 1, text, cs, start, Math.min(text.length(), hscroll + width), shown.from(), shown.to());
                 y++;
             }
             pos = line.next();
@@ -819,6 +872,7 @@ public final class FileView implements Closeable {
                 + (wrap ? "   wrap" : hscroll > 0 ? "   column " + (hscroll + 1) : "");
         footer(g, w, h, status, "Up/Down PgUp/PgDn/Space Home/End scroll" + (wrap ? "" : "   Left/Right pan")
                 + "   F7 find   F3/N next   P prev   G goto   L lines   W wrap   "
+                + (richKind == null ? "" : richRendered ? "R raw   " : "R rendered   ")
                 + (backToImage && !pdf ? "Tab image" : "Tab hex") + "   Esc close");
     }
 
@@ -847,28 +901,77 @@ public final class FileView implements Closeable {
                 theme.muted(), theme.appBackground());
     }
 
-    /** Draws {@code text[start, end)} at the text column; {@code [from, to)} (when {@code from >= 0}) is highlighted. */
-    private void drawSlice(TextGraphics g, int y, String text, int start, int end, int from, int to) {
+    /** One style per character of {@code text}, which starts at byte {@code start} of the text; null when unstyled. */
+    private byte[] lineStyles(String text, long start) {
+        if (styles == null) {
+            return null;
+        }
+        byte[] out = new byte[text.length()];
+        long at = start;
+        for (int i = 0; i < text.length(); i++) {
+            out[i] = at >= 0 && at < styles.length ? styles[(int) at] : 0;
+            at += TextOut.Result.utf8Length(text, i);
+        }
+        return out;
+    }
+
+    /** The styles of the line after {@link Draw#expand}: a tab is as many cells as spaces it was turned into. */
+    private static byte[] expandStyles(String original, byte[] styles, String expanded) {
+        if (styles == null || expanded.length() == original.length()) {
+            return styles;
+        }
+        byte[] out = new byte[expanded.length()];
+        int at = 0;
+        for (int i = 0; i < original.length() && at < out.length; i++) {
+            int cells = original.charAt(i) == '\t' ? 4 - (at % 4) : 1;
+            for (int k = 0; k < cells && at < out.length; k++) {
+                out[at++] = styles[i];
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Draws {@code text[start, end)} at the text column; {@code [from, to)} (when {@code from >= 0}) is highlighted.
+     * {@code styled} gives the style of every character, or is null for plain text.
+     */
+    private void drawSlice(TextGraphics g, int y, String text, byte[] styled, int start, int end, int from, int to) {
         if (end <= start) {
             return;
         }
         int hl0 = Math.max(start, Math.min(from, end));
         int hl1 = Math.max(start, Math.min(to, end));
         boolean highlight = from >= 0 && hl1 > hl0;
-        piece(g, y, text, start, highlight ? hl0 : end, theme.appBackground(), start);
+        piece(g, y, text, styled, start, highlight ? hl0 : end, theme.appBackground(), start);
         if (highlight) {
-            piece(g, y, text, hl0, hl1, theme.match(), start);
-            piece(g, y, text, hl1, end, theme.appBackground(), start);
+            piece(g, y, text, styled, hl0, hl1, theme.match(), start);
+            piece(g, y, text, styled, hl1, end, theme.appBackground(), start);
         }
     }
 
-    private void piece(TextGraphics g, int y, String text, int from, int to, TextColor bg, int origin) {
+    private void piece(TextGraphics g, int y, String text, byte[] styled, int from, int to, TextColor bg, int origin) {
         if (to <= from) {
             return;
         }
-        g.setForegroundColor(theme.text());
         g.setBackgroundColor(bg);
-        g.putString(new TerminalPosition(textX + from - origin, y), text.substring(from, to));
+        if (styled == null) {
+            g.setForegroundColor(theme.text());
+            g.putString(new TerminalPosition(textX + from - origin, y), text.substring(from, to));
+            return;
+        }
+        int i = from;
+        while (i < to) {
+            byte style = styled[i];
+            int j = i + 1;
+            while (j < to && styled[j] == style) {
+                j++;
+            }
+            g.setForegroundColor(TextStyle.color(theme, style));
+            g.setModifiers(TextStyle.modifiers(style));
+            g.putString(new TerminalPosition(textX + i - origin, y), text.substring(i, j));
+            i = j;
+        }
+        g.setModifiers(TextStyle.modifiers((byte) 0));
     }
 
     private void drawHex(TextGraphics g, int w, int h) throws IOException {

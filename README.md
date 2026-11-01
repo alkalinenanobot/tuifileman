@@ -21,8 +21,9 @@ thousand files it copied as fast as `robocopy /MT:32` and faster than FastCopy a
 - **Directory sync** (`Ctrl+F9`): compares by size + time or by content, honours `.gitignore`, and merges or
   mirrors.
 - **File compare** (`Ctrl+F3`): side-by-side line diff for text, hex view for binary files.
-- **Viewer** (`F3`): text with encoding detection, or a hex dump; multi-GB files open instantly. Images (chafa,
-  sixel), PDFs (Poppler), and video and audio (FFmpeg, mpv inside the terminal).
+- **Viewer** (`F3`): text with encoding detection, or a hex dump; multi-GB files open instantly. HTML and
+  Markdown rendered as text. Images (chafa, sixel), PDFs (Poppler), and video and audio (FFmpeg, mpv inside
+  the terminal).
 - **Editor** (`F4`): keeps encoding, line endings and BOM. Selection, system clipboard, undo, find/replace,
   line wrap.
 - **File search** (`Alt+F7`): by name and content, in parallel, optionally inside archives.
@@ -88,7 +89,7 @@ The panel title shows the drive and its volume label; the path line shortens lon
 | `Ctrl+R` | Refresh |
 | `Alt+F1` / `Alt+F2`, click on a panel title | Change the drive of the left / right panel; the last directory of each drive is remembered |
 | `Ctrl+L` | Go to a typed path |
-| `Ctrl+D` | Bookmarks: `Enter` go, `Insert` add the current directory, `Delete` remove |
+| `Ctrl+D` | Bookmarks: `Enter` go, `Insert` add the current directory, `Delete` remove, type letters to search (`Up`/`Down` next/previous match, `Esc` clears) |
 | `Ctrl+C` / `Ctrl+K` | Copy the names / full paths of the marked entries (or of the one under the cursor) to the system clipboard, one per line (not inside an archive) |
 | `F10` | Quit |
 | `F12` | Problem list with demo data (debug aid for UI checks) |
@@ -141,11 +142,17 @@ supported yet. The [command line](#command-line-mode) reaches into archives too 
 
 ### Viewer (`F3`)
 
-Text with UTF-8/UTF-16/ANSI detection, or a hex dump; multi-GB files open instantly.
+Text with UTF-8/UTF-16/ANSI detection, or a hex dump; multi-GB files open instantly. HTML (`.html`, `.htm`,
+`.xhtml`) and Markdown (`.md`, `.markdown`) files open rendered: coloured headings, links and code, bold, italic,
+underline and strike-through (the terminal must support the attributes; the plain text stays readable
+without), lists and task lists, block quotes, code blocks, links as `text (url)` and tables as aligned columns
+(`Name │ Qty` with a rule under the header; wide tables wrap with the window, or pan with `W` off). The renderers
+are built in (jsoup and commonmark-java), nothing to install; `R` shows the raw source. Files over 64 MB open raw.
 
 | Key | Action |
 |---|---|
 | `Tab` | Switch between text and hex |
+| `R` | HTML and Markdown files: switch between the rendered text and the raw source |
 | `Space` | Page down |
 | `L` | Line numbers (on by default, `viewer.line_numbers`) |
 | `W` | Wrap long lines (on by default, `viewer.wrap`): breaks after the last space that fits, hard at the window width otherwise; with wrap off `Left`/`Right` pan |
@@ -480,7 +487,7 @@ rebuild as above.
 - `compare/` — `DirCompare` (folder scan behind `diff`, `sync` and Ctrl+F9), `CompareView` (Ctrl+F3),
   `TextCompare`/`LineDiff`/`BinaryCompare`, `TimeTolerance`
 - `search/` — `FileSearch` (engine of Alt+F7 and `find`)
-- `view/` — `FileView` (F3 viewer) and the image, PDF and media previews
+- `view/` — `FileView` (F3 viewer), `RichText` (HTML and Markdown as text) and the image, PDF and media previews
 - `fs/` — `Archives`, `Parallel` (thread counts per drive type), `Glob`, `Entries`
 - `ignore/` — `.gitignore` matching (`GitIgnoreMatcher`, JGit rules)
 - `config/` — `Config` (the INI settings)
@@ -503,8 +510,8 @@ rebuild as above.
 ## License
 
 tuifileman is released under the [MIT License](LICENSE), copyright (c) 2026 alkalinenanobot.
-It bundles Lanterna (LGPL-3.0-or-later), JNA (Apache-2.0 option), Eclipse JGit (EDL, BSD-3-Clause)
-and SLF4J (MIT); their notices and full license texts are in
+It bundles Lanterna (LGPL-3.0-or-later), JNA (Apache-2.0 option), Eclipse JGit (EDL, BSD-3-Clause),
+SLF4J (MIT), jsoup (MIT) and commonmark-java (BSD-2-Clause); their notices and full license texts are in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and the [licenses](licenses) folder, and a release
 archive contains them next to the exe.
 

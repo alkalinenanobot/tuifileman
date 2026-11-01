@@ -806,7 +806,11 @@ public final class App {
         }
     }
 
-    /** Bookmark list (Ctrl+D): Enter jumps in the active panel, Insert/Ctrl+D adds the current directory, Delete removes. */
+    /**
+     * Bookmark list (Ctrl+D): Enter jumps in the active panel, Insert/Ctrl+D adds the current directory, Delete removes.
+     * Typing letters searches like in a panel: first name starting with the text, else first path containing it;
+     * Up/Down step through matches, Backspace edits, Esc clears the search (a second Esc closes).
+     */
     private void showBookmarks() {
         PanelState target = panel();
         int selected = 0;
@@ -817,10 +821,53 @@ public final class App {
             int rows = Math.max(3, Math.min(12, items.size()));
             Path[] chosen = {null};
             int[] action = {0}; // 1 = add current directory, 2 = remove selected
+            PathSearch search = new PathSearch();
+            String baseFooter = note.isEmpty()
+                    ? "Enter go   Insert add current dir   Delete remove   Type to search   Esc close" : note;
+            int footerWidth = Math.max(width, baseFooter.length());
+            Label footer = new Label(String.format("%-" + footerWidth + "s", baseFooter));
             ActionListBox list = new ActionListBox(new TerminalSize(width, rows));
             BasicWindow window = new BasicWindow("Bookmarks") {
+                private void searched(int index) {
+                    if (index >= 0) {
+                        list.setSelectedIndex(index);
+                    }
+                    String text = search.active()
+                            ? "Search: " + search.text() + "\u258c" + (search.matched() ? "" : "  (no match)")
+                            : baseFooter;
+                    footer.setText(String.format("%-" + footerWidth + "s", fit(text, footerWidth)));
+                }
+
                 @Override
                 public boolean handleInput(KeyStroke key) {
+                    boolean plain = key.getKeyType() == KeyType.Character && !key.isCtrlDown() && !key.isAltDown()
+                            && key.getCharacter() != null && !Character.isISOControl(key.getCharacter());
+                    if (plain && (search.active() || key.getCharacter() != ' ')) {
+                        searched(search.append(key.getCharacter(), items));
+                        return true;
+                    }
+                    if (search.active()) {
+                        switch (key.getKeyType()) {
+                            case Backspace -> {
+                                searched(search.backspace(items));
+                                return true;
+                            }
+                            case Escape -> {
+                                search.clear();
+                                searched(-1);
+                                return true;
+                            }
+                            case ArrowUp -> {
+                                searched(search.step(-1, list.getSelectedIndex(), items));
+                                return true;
+                            }
+                            case ArrowDown -> {
+                                searched(search.step(1, list.getSelectedIndex(), items));
+                                return true;
+                            }
+                            default -> search.clear();
+                        }
+                    }
                     boolean add = key.getKeyType() == KeyType.Insert
                             || (key.getKeyType() == KeyType.Character && key.isCtrlDown()
                                     && key.getCharacter() != null && Character.toLowerCase(key.getCharacter()) == 'd');
@@ -852,8 +899,7 @@ public final class App {
                     ? "No bookmarks yet - press Insert to add the current directory"
                     : (target == panels[0] ? "Left" : "Right") + " panel: " + target.displayPath(), width)));
             content.addComponent(list);
-            content.addComponent(new Label(note.isEmpty()
-                    ? "Enter go   Insert add current dir   Delete remove   Esc close" : note));
+            content.addComponent(footer);
             window.setComponent(content);
             pad(window, 1);
             gui().addWindowAndWait(window);

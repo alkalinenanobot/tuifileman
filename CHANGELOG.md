@@ -12,6 +12,13 @@
   binary files only report whether they differ. Folders against a file are a usage error.
 - `diff -c` on folders reports a file whose content differs (other size, or equal size and other bytes) as
   `different` instead of `left-newer`/`right-newer`; `sync -c` still names the newer side, which a merge needs.
+- Viewer (`F3`): HTML (`.html`, `.htm`, `.xhtml`) and Markdown (`.md`, `.markdown`) files open rendered as styled
+  text: coloured headings, links and code, bold, italic, underline and strike-through, lists, tables as aligned
+  columns (GFM tables in Markdown, `<table>` in HTML), task lists, quotes, code blocks, links as `text (url)`;
+  `R` switches to the raw source. Built in with jsoup and commonmark-java, no external tool. The themes got
+  `heading`, `link` and `code` colours.
+- Bookmark list (`Ctrl+D`): typing searches it like in a panel (name prefix first, else any part of the path;
+  `Up`/`Down` step through matches, `Backspace` edits, `Esc` clears).
 
 ## 0.4.2
 
