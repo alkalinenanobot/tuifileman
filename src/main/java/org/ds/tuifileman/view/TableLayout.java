@@ -2,6 +2,7 @@ package org.ds.tuifileman.view;
 
 import java.util.Arrays;
 import java.util.List;
+import org.ds.tuifileman.ui.TextStyle;
 
 /**
  * Lays a table out as aligned text columns: cells joined by {@code │}, the header in bold followed by a

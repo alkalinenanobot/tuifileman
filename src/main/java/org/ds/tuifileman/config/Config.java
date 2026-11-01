@@ -44,6 +44,11 @@ public final class Config {
             line_numbers = true
             # Wrap long lines in the F3 text viewer instead of panning sideways (W toggles it while viewing).
             wrap = true
+            # Colour source files in the F3 text viewer by file extension (java, c, cpp, cs, js, ts, py, json, xml,
+            # html, css, yaml, ini, sh, bat, ps1, sql, md, go, rs, php, rb ...): true or false.
+            highlight = true
+            # Files larger than this many KB are shown without colour (the file is scanned once when it opens).
+            highlight_max_kb = 1024
 
             [image]
             # External renderer for image preview in F3 (png, jpg, gif, webp, svg, tiff, qoi).

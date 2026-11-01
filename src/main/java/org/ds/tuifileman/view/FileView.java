@@ -10,8 +10,11 @@ import com.googlecode.lanterna.screen.Screen;
 import org.ds.tuifileman.compare.TextCompare;
 import org.ds.tuifileman.config.Config;
 import org.ds.tuifileman.model.FileEntry;
+import org.ds.tuifileman.syntax.Highlighter;
+import org.ds.tuifileman.syntax.Language;
 import org.ds.tuifileman.ui.Draw;
 import org.ds.tuifileman.ui.LineInput;
+import org.ds.tuifileman.ui.TextStyle;
 import org.ds.tuifileman.ui.Theme;
 import org.ds.tuifileman.ui.Wrap;
 import java.io.Closeable;
@@ -75,6 +78,8 @@ public final class FileView implements Closeable {
     private boolean richRendered;
     private boolean wantRichToggle;
     private byte[] styles;
+    private boolean styleUtf8 = true;
+    private String language;
     private long anchorPos;
     private long anchorLines;
     private int gutterDigits = 4;
@@ -148,6 +153,9 @@ public final class FileView implements Closeable {
                     view.wrap = config.flag("viewer.wrap", true);
                     view.backToImage = image;
                     view.richKind = rich;
+                    if (view.styles == null) {
+                        view.highlight(path, config);
+                    }
                     view.run();
                     if (view.wantRichToggle) {
                         raw = !raw;
@@ -228,6 +236,32 @@ public final class FileView implements Closeable {
             view.message = "Raw text: " + problem;
         }
         return view;
+    }
+
+    /**
+     * Colours a source file chosen by its name (viewer.highlight, files up to viewer.highlight_max_kb): the whole
+     * file is scanned once and the result kept as one style per byte. A file that cannot be mapped to characters
+     * (bad bytes, a multi-byte charset other than UTF-8) stays plain.
+     */
+    private void highlight(Path path, Config config) {
+        if (converted || !textMode || !config.flag("viewer.highlight", true)) {
+            return;
+        }
+        Language found = Language.forFile(path);
+        if (found == null || fileSize > config.number("viewer.highlight_max_kb", 1024) * 1024L) {
+            return;
+        }
+        try {
+            byte[] colours = new Highlighter(found).document(Files.readAllBytes(path), (int) reader.dataStart(),
+                    reader.charset());
+            if (colours != null) {
+                styles = colours;
+                styleUtf8 = reader.charset().equals(StandardCharsets.UTF_8);
+                language = found.name();
+            }
+        } catch (IOException | RuntimeException e) {
+            // Colour is a nicety: the plain text stays.
+        }
     }
 
     private static FileView open(Screen screen, Theme theme, Path path) throws IOException {
@@ -812,7 +846,8 @@ public final class FileView implements Closeable {
     private void drawText(TextGraphics g, int w, int h) throws IOException {
         int body = h - 3;
         clampTop(body);
-        header(g, w, encoding + (converted ? ", converted" : "") + ", " + FileEntry.humanSize(fileSize));
+        header(g, w, encoding + (language == null ? "" : ", " + language) + (converted ? ", converted" : "") + ", "
+                + FileEntry.humanSize(fileSize));
         textX = 0;
         long topNumber = -1;
         if (lineNumbers) {
@@ -910,7 +945,7 @@ public final class FileView implements Closeable {
         long at = start;
         for (int i = 0; i < text.length(); i++) {
             out[i] = at >= 0 && at < styles.length ? styles[(int) at] : 0;
-            at += TextOut.Result.utf8Length(text, i);
+            at += styleUtf8 ? TextStyle.utf8Length(text, i) : 1;
         }
         return out;
     }

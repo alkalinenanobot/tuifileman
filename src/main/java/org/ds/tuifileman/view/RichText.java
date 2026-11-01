@@ -58,6 +58,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.TextNode;
 import org.jsoup.select.NodeFilter;
 import org.jsoup.select.NodeTraversor;
+import org.ds.tuifileman.ui.TextStyle;
 
 /**
  * HTML and Markdown files as styled plain text for the F3 viewer: headings (underlined or marked with #),

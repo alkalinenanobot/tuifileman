@@ -8,7 +8,8 @@ import java.util.Locale;
  * Semantic colour roles; every screen draws with these only, so a new palette is just a new factory method.
  * {@code match} is the search hit in the viewer and the marked range in the compare hex view;
  * {@code filler} is the empty side of a one-sided difference; {@code heading}, {@code link} and {@code code}
- * colour the rendered HTML and Markdown in the viewer.
+ * colour the rendered HTML and Markdown in the viewer; {@code keyword} to {@code meta} (annotations,
+ * preprocessor lines, markup tags) colour source code in the viewer.
  */
 public record Theme(
         String name,
@@ -36,7 +37,13 @@ public record Theme(
         TextColor filler,
         TextColor heading,
         TextColor link,
-        TextColor code) {
+        TextColor code,
+        TextColor keyword,
+        TextColor type,
+        TextColor string,
+        TextColor number,
+        TextColor comment,
+        TextColor meta) {
 
     private static final List<Theme> ALL = List.of(dark(), light(), contrast(), mc());
 
@@ -67,7 +74,9 @@ public record Theme(
                 rgb(58, 74, 95), rgb(40, 110, 130),
                 rgb(62, 28, 34), rgb(128, 42, 52), rgb(24, 58, 40), rgb(36, 118, 66),
                 rgb(62, 54, 24), rgb(132, 104, 30), rgb(27, 33, 45),
-                rgb(240, 170, 110), rgb(110, 170, 255), rgb(190, 160, 235));
+                rgb(240, 170, 110), rgb(110, 170, 255), rgb(190, 160, 235),
+                rgb(198, 140, 232), rgb(86, 190, 210), rgb(152, 195, 121), rgb(209, 154, 102), rgb(110, 125, 145),
+                rgb(224, 108, 117));
     }
 
     public static Theme light() {
@@ -79,7 +88,9 @@ public record Theme(
                 rgb(214, 220, 229), rgb(255, 226, 120),
                 rgb(255, 224, 228), rgb(250, 170, 180), rgb(214, 244, 224), rgb(150, 220, 175),
                 rgb(255, 243, 205), rgb(245, 214, 120), rgb(232, 235, 240),
-                rgb(176, 80, 0), rgb(0, 90, 200), rgb(120, 60, 170));
+                rgb(176, 80, 0), rgb(0, 90, 200), rgb(120, 60, 170),
+                rgb(120, 50, 190), rgb(0, 110, 140), rgb(30, 120, 50), rgb(170, 90, 0), rgb(120, 130, 140),
+                rgb(190, 50, 70));
     }
 
     /** Black and white with yellow accents and a saturated selection: for bright rooms and weak eyes. */
@@ -92,7 +103,9 @@ public record Theme(
                 rgb(80, 80, 80), rgb(150, 0, 150),
                 rgb(110, 0, 0), rgb(200, 0, 0), rgb(0, 90, 0), rgb(0, 130, 0),
                 rgb(110, 90, 0), rgb(150, 110, 0), rgb(40, 40, 40),
-                rgb(255, 235, 0), rgb(80, 200, 255), rgb(255, 150, 255));
+                rgb(255, 235, 0), rgb(80, 200, 255), rgb(255, 150, 255),
+                rgb(255, 150, 255), rgb(80, 220, 255), rgb(120, 255, 120), rgb(255, 170, 60), rgb(170, 170, 170),
+                rgb(255, 110, 110));
     }
 
     /** Black panels, white frames and a blue bar, like a Midnight Commander skin. */
@@ -105,7 +118,9 @@ public record Theme(
                 rgb(70, 70, 70), rgb(0, 90, 160),
                 rgb(80, 0, 0), rgb(170, 0, 0), rgb(0, 70, 0), rgb(0, 140, 0),
                 rgb(90, 80, 0), rgb(150, 130, 0), rgb(30, 30, 30),
-                rgb(255, 255, 80), rgb(80, 255, 255), rgb(200, 160, 255));
+                rgb(255, 255, 80), rgb(80, 255, 255), rgb(200, 160, 255),
+                rgb(255, 120, 255), rgb(80, 255, 255), rgb(80, 255, 80), rgb(255, 170, 60), rgb(130, 130, 130),
+                rgb(255, 100, 100));
     }
 
     private static TextColor rgb(int r, int g, int b) {

@@ -149,6 +149,13 @@ without), lists and task lists, block quotes, code blocks, links as `text (url)`
 (`Name │ Qty` with a rule under the header; wide tables wrap with the window, or pan with `W` off). The renderers
 are built in (jsoup and commonmark-java), nothing to install; `R` shows the raw source. Files over 64 MB open raw.
 
+Source files are coloured by their extension (Java, C, C++, C#, JavaScript, TypeScript, Python, JSON, XML, HTML,
+CSS, YAML, INI/TOML, shell, batch, PowerShell, SQL, Markdown, Go, Rust, PHP, Ruby, Kotlin, Scala and more;
+`Makefile` and `Dockerfile` by name): keywords, types, strings, numbers, comments, annotations and tags, with
+multi-line strings and comments carried across lines. The header shows the language. `viewer.highlight` turns it
+off, `viewer.highlight_max_kb` (default 1024) is the size limit. `R` on an HTML or Markdown file shows its source
+coloured.
+
 | Key | Action |
 |---|---|
 | `Tab` | Switch between text and hex |
@@ -488,6 +495,7 @@ rebuild as above.
   `TextCompare`/`LineDiff`/`BinaryCompare`, `TimeTolerance`
 - `search/` — `FileSearch` (engine of Alt+F7 and `find`)
 - `view/` — `FileView` (F3 viewer), `RichText` (HTML and Markdown as text) and the image, PDF and media previews
+- `syntax/` — `Language` (by file name) and `Highlighter` (per-line scanning with RSyntaxTextArea's scanners)
 - `fs/` — `Archives`, `Parallel` (thread counts per drive type), `Glob`, `Entries`
 - `ignore/` — `.gitignore` matching (`GitIgnoreMatcher`, JGit rules)
 - `config/` — `Config` (the INI settings)
@@ -511,7 +519,8 @@ rebuild as above.
 
 tuifileman is released under the [MIT License](LICENSE), copyright (c) 2026 alkalinenanobot.
 It bundles Lanterna (LGPL-3.0-or-later), JNA (Apache-2.0 option), Eclipse JGit (EDL, BSD-3-Clause),
-SLF4J (MIT), jsoup (MIT) and commonmark-java (BSD-2-Clause); their notices and full license texts are in
+SLF4J (MIT), jsoup (MIT), commonmark-java (BSD-2-Clause) and RSyntaxTextArea's language scanners (BSD-3-Clause);
+their notices and full license texts are in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and the [licenses](licenses) folder, and a release
 archive contains them next to the exe.
 

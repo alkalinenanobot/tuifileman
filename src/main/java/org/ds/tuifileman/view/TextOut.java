@@ -3,6 +3,7 @@ package org.ds.tuifileman.view;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import org.ds.tuifileman.ui.TextStyle;
 
 /**
  * Builds the styled plain text of a rendered HTML or Markdown document. Inline text is collapsed to single spaces,
@@ -24,12 +25,12 @@ final class TextOut {
         byte[] byteStyles() {
             int size = 0;
             for (int i = 0; i < text.length(); i++) {
-                size += utf8Length(text, i);
+                size += TextStyle.utf8Length(text, i);
             }
             byte[] out = new byte[size];
             int at = 0;
             for (int i = 0; i < text.length(); i++) {
-                int n = utf8Length(text, i);
+                int n = TextStyle.utf8Length(text, i);
                 Arrays.fill(out, at, at + n, styles[i]);
                 at += n;
             }
@@ -54,21 +55,6 @@ final class TextOut {
                 sb.append(c);
             }
             return new Result(sb.toString(), Arrays.copyOf(out, sb.length()));
-        }
-
-        /** UTF-8 length of the character at {@code i}; a low surrogate counts 0 (the pair is counted at the high one). */
-        static int utf8Length(String text, int i) {
-            char c = text.charAt(i);
-            if (c < 0x80) {
-                return 1;
-            }
-            if (c < 0x800) {
-                return 2;
-            }
-            if (Character.isHighSurrogate(c) && i + 1 < text.length() && Character.isLowSurrogate(text.charAt(i + 1))) {
-                return 4;
-            }
-            return Character.isLowSurrogate(c) && i > 0 && Character.isHighSurrogate(text.charAt(i - 1)) ? 0 : 3;
         }
     }
 

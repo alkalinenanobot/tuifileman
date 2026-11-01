@@ -17,6 +17,11 @@
   columns (GFM tables in Markdown, `<table>` in HTML), task lists, quotes, code blocks, links as `text (url)`;
   `R` switches to the raw source. Built in with jsoup and commonmark-java, no external tool. The themes got
   `heading`, `link` and `code` colours.
+- Viewer (`F3`): source files are coloured by extension (34 languages, from RSyntaxTextArea's scanners: strings,
+  comments, text blocks and escapes are handled by the scanner, not by regular expressions of ours). The whole
+  file is scanned once on opening, up to `viewer.highlight_max_kb` (1024); `viewer.highlight = false` turns it off.
+  Themes got `keyword`, `type`, `string`, `number`, `comment` and `meta` colours. The same engine (`syntax.Highlighter`)
+  is meant for the editor.
 - Bookmark list (`Ctrl+D`): typing searches it like in a panel (name prefix first, else any part of the path;
   `Up`/`Down` step through matches, `Backspace` edits, `Esc` clears).
 

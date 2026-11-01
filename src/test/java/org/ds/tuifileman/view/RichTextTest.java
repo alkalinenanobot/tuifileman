@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.ds.tuifileman.ui.TextStyle;
 import org.junit.jupiter.api.Test;
 
 class RichTextTest {

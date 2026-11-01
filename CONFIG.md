@@ -35,6 +35,8 @@ Booleans accept `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`.
 | **`[viewer]`** | | |
 | `line_numbers` | `true` | Line number gutter in the F3 text view (`L` toggles it while viewing). |
 | `wrap` | `true` | Wrap long lines in the F3 text view instead of panning sideways (`W` toggles it while viewing). |
+| `highlight` | `true` | Colour source files in the F3 text view by file extension (Java, C, C++, C#, JavaScript, TypeScript, Python, JSON, XML, HTML, CSS, YAML, INI, shell, batch, PowerShell, SQL, Markdown, Go, Rust, PHP, Ruby and more; `Makefile` and `Dockerfile` by name). The header shows the language. |
+| `highlight_max_kb` | `1024` | Files larger than this many KB open without colour; the file is scanned once when it opens. |
 | **`[image]`** | | |
 | `chafa` | `chafa` | External renderer for image preview in F3 (png, jpg, gif, webp, svg, tiff, qoi): a name on `PATH` or a full path. Empty disables image preview (F3 then shows an info page). |
 | `symbols` | `half+quad+space` | Character cells used for the picture: any `chafa --symbols` value, for example `block`, `half`, `ascii`. |
