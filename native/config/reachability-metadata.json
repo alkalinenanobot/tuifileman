@@ -1024,6 +1024,34 @@
       "type": "sun.text.resources.cldr.FormatData"
     },
     {
+      "type": "sun.misc.Signal",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "handle",
+          "parameterTypes": [
+            "sun.misc.Signal",
+            "sun.misc.SignalHandler"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.misc.SignalHandler"
+    },
+    {
+      "type": {
+        "proxy": [
+          "sun.misc.SignalHandler"
+        ]
+      }
+    },
+    {
       "type": {
         "proxy": [
           "com.googlecode.lanterna.terminal.win32.Wincon"

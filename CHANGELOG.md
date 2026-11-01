@@ -1,17 +1,7 @@
 # Changelog
 
-## 0.5.0
+## 0.6.0
 
-- `find -x/--exclude GLOB`, `-g/--gitignore` and `--ignore-file FILE` (the options of `diff`): excluded or ignored folders
-  are not entered, e.g. `find . -N bom.ini -x .git`.
-- `find` takes an archive file (zip, jar, docx ...) or a folder inside one as its root (`find pack.zip -N "BuildID*"`).
-  An entry of an archive can be named `ARCHIVE!/path/in/it`, as `find` prints it, in `cat`, `diff`, `find` and as a
-  source of `copy` (also with `*`/`?`); `move`, `delete` and `rename` refuse archive entries (read-only).
-- New command `cat FILE...`: files, or single archive entries, to stdout unchanged (`tfm-cat` alias).
-- `diff` with two files prints a unified diff (`-U N`, `-w`, `-i`), reusing the line comparison of the file manager;
-  binary files only report whether they differ. Folders against a file are a usage error.
-- `diff -c` on folders reports a file whose content differs (other size, or equal size and other bytes) as
-  `different` instead of `left-newer`/`right-newer`; `sync -c` still names the newer side, which a merge needs.
 - Viewer (`F3`): HTML (`.html`, `.htm`, `.xhtml`) and Markdown (`.md`, `.markdown`) files open rendered as styled
   text: coloured headings, links and code, bold, italic, underline and strike-through, lists, tables as aligned
   columns (GFM tables in Markdown, `<table>` in HTML), task lists, quotes, code blocks, links as `text (url)`;
@@ -30,7 +20,23 @@
 - Viewer (`F3`): `G` takes a line number in the text view: a plain number (`1234`, also `l1234` or `line 1234`) is a
   line, a byte offset needs a colon (`:1234`; `0xHEX` and `NN%` as before; in the hex view a plain number stays an
   offset). The newlines are counted from the nearer of the start of the file and the position the gutter counted to,
-  and `Esc` cancels a long scan.
+  and `Esc` cancels a long scan. (Until 0.5.0 a plain number was a byte offset: use `:1234` for that now.)
+- Linux native executable: the window size was never re-read, so resizing the terminal (also in Windows Terminal under
+  WSL) left the screen at its old size. Lanterna registers its SIGWINCH handler through reflection on
+  `sun.misc.Signal`, which the native image did not know; `native/config` now lists it.
+
+## 0.5.0
+
+- `find -x/--exclude GLOB`, `-g/--gitignore` and `--ignore-file FILE` (the options of `diff`): excluded or ignored folders
+  are not entered, e.g. `find . -N bom.ini -x .git`.
+- `find` takes an archive file (zip, jar, docx ...) or a folder inside one as its root (`find pack.zip -N "BuildID*"`).
+  An entry of an archive can be named `ARCHIVE!/path/in/it`, as `find` prints it, in `cat`, `diff`, `find` and as a
+  source of `copy` (also with `*`/`?`); `move`, `delete` and `rename` refuse archive entries (read-only).
+- New command `cat FILE...`: files, or single archive entries, to stdout unchanged (`tfm-cat` alias).
+- `diff` with two files prints a unified diff (`-U N`, `-w`, `-i`), reusing the line comparison of the file manager;
+  binary files only report whether they differ. Folders against a file are a usage error.
+- `diff -c` on folders reports a file whose content differs (other size, or equal size and other bytes) as
+  `different` instead of `left-newer`/`right-newer`; `sync -c` still names the newer side, which a merge needs.
 
 ## 0.4.2
 
