@@ -564,17 +564,24 @@ public final class FileView implements Closeable {
         };
     }
 
-    /** A line number typed as {@code :N}, {@code lN} or {@code line N}. */
-    private static final java.util.regex.Pattern LINE_INPUT =
-            java.util.regex.Pattern.compile("(?:|:|l|line)\\s*(\\d+)");
+    /** A line number typed with a letter: {@code lN} or {@code line N} (a bare number is a line in the text view too). */
+    private static final java.util.regex.Pattern LINE_INPUT = java.util.regex.Pattern.compile("(?:l|line)\\s*(\\d+)");
 
+    /**
+     * G: in the text view a plain number is a line; {@code :N} is a byte offset. {@code 0xHEX} and {@code NN%} are
+     * offsets. In the hex view a plain number is an offset (there are no lines).
+     */
     private void goTo() throws IOException {
-        String input = prompt(textMode ? "Go to (:LINE, offset, 0xHEX or NN%): " : "Go to (offset, 0xHEX or NN%): ", "");
+        String input = prompt(textMode ? "Go to (LINE, :OFFSET, 0xHEX or NN%): " : "Go to (offset, 0xHEX or NN%): ", "");
         if (input == null || input.isBlank()) {
             return;
         }
         String s = input.trim().toLowerCase(Locale.ROOT);
-        if (s.startsWith(":") || s.startsWith("l")) {
+        boolean offsetPrefix = s.startsWith(":");
+        if (offsetPrefix) {
+            s = s.substring(1).strip();
+        }
+        if (!offsetPrefix && s.startsWith("l")) {
             java.util.regex.Matcher line = LINE_INPUT.matcher(s);
             if (!line.matches()) {
                 message = "Not a line number: " + input;
@@ -582,6 +589,14 @@ public final class FileView implements Closeable {
             }
             try {
                 goToLine(Long.parseLong(line.group(1)));
+            } catch (NumberFormatException e) {
+                message = "Not a line number: " + input;
+            }
+            return;
+        }
+        if (!offsetPrefix && textMode && s.matches("\\d+")) {
+            try {
+                goToLine(Long.parseLong(s));
             } catch (NumberFormatException e) {
                 message = "Not a line number: " + input;
             }

@@ -165,7 +165,7 @@ coloured.
 | `W` | Wrap long lines (on by default, `viewer.wrap`): breaks after the last space that fits, hard at the window width otherwise; with wrap off `Left`/`Right` pan |
 | `F7`, `/` | Find (`0x..` searches bytes) |
 | `F3`, `n` / `p` | Next / previous match |
-| `g` | Go to a line (`:1234`, `l1234` or `line 1234`, text view), an offset (decimal or `0xHEX`) or `NN%`. A far line in a huge file is counted by reading it (about 1 GB per second when cached); `Esc` cancels. Past the end it shows the last line |
+| `g` | Go to a line (text view: `1234`, `l1234` or `line 1234`) or an offset (`:1234`, `0xHEX`, `NN%`; in the hex view a plain number is an offset). A far line in a huge file is counted by reading it (about 1 GB per second when cached); `Esc` cancels. Past the end it shows the last line |
 | `Esc`, `q` | Close |
 
 Previews use external tools; their commands are settings ([CONFIG.md](CONFIG.md)):
