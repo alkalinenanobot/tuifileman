@@ -20,10 +20,13 @@
 - Viewer (`F3`): source files are coloured by extension (34 languages, from RSyntaxTextArea's scanners: strings,
   comments, text blocks and escapes are handled by the scanner, not by regular expressions of ours). The whole
   file is scanned once on opening, up to `viewer.highlight_max_kb` (1024); `viewer.highlight = false` turns it off.
-  Themes got `keyword`, `type`, `string`, `number`, `comment` and `meta` colours. The same engine (`syntax.Highlighter`)
-  is meant for the editor.
+  Themes got `keyword`, `type`, `string`, `number`, `comment` and `meta` colours.
 - Bookmark list (`Ctrl+D`): typing searches it like in a panel (name prefix first, else any part of the path;
   `Up`/`Down` step through matches, `Backspace` edits, `Esc` clears).
+- Editor (`F4`): source files are coloured while you edit (`editor.highlight`, default on). One scanner state per line
+  is kept (`syntax.DocumentStyles`) and repaired after every edit, undo and redo: typing in an ordinary line rescans
+  that line only, opening or closing a comment or text block recolours the lines it reaches (followed up to 5000 lines
+  at once, the rest when drawn). Selection, current line and tabs keep the colours.
 - Viewer (`F3`): `G` takes a line number in the text view: a plain number (`1234`, also `l1234` or `line 1234`) is a
   line, a byte offset needs a colon (`:1234`; `0xHEX` and `NN%` as before; in the hex view a plain number stays an
   offset). The newlines are counted from the nearer of the start of the file and the position the gutter counted to,

@@ -67,4 +67,34 @@ public final class Draw {
         }
         return new Expanded(out.toString(), mappedFrom, mappedTo);
     }
+
+    /**
+     * Draws {@code text[from, to)} with its first character at column {@code x}, each character in the colour and
+     * attributes of {@code styles} (see {@link TextStyle}; null = plain text) on the background {@code bg}.
+     */
+    public static void runs(TextGraphics g, Theme theme, int x, int y, String text, byte[] styles, int from, int to,
+                            TextColor bg) {
+        if (to <= from) {
+            return;
+        }
+        g.setBackgroundColor(bg);
+        if (styles == null) {
+            g.setForegroundColor(theme.text());
+            g.putString(new TerminalPosition(x, y), text.substring(from, to));
+            return;
+        }
+        int i = from;
+        while (i < to) {
+            byte style = styles[i];
+            int j = i + 1;
+            while (j < to && styles[j] == style) {
+                j++;
+            }
+            g.setForegroundColor(TextStyle.color(theme, style));
+            g.setModifiers(TextStyle.modifiers(style));
+            g.putString(new TerminalPosition(x + i - from, y), text.substring(i, j));
+            i = j;
+        }
+        g.setModifiers(TextStyle.modifiers((byte) 0));
+    }
 }

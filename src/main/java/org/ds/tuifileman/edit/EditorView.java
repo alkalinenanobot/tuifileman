@@ -8,8 +8,11 @@ import com.googlecode.lanterna.input.MouseAction;
 import com.googlecode.lanterna.screen.Screen;
 import org.ds.tuifileman.config.Config;
 import org.ds.tuifileman.edit.TextBuffer.Pos;
+import org.ds.tuifileman.syntax.DocumentStyles;
+import org.ds.tuifileman.syntax.Language;
 import org.ds.tuifileman.ui.Draw;
 import org.ds.tuifileman.ui.LineInput;
+import org.ds.tuifileman.ui.TextStyle;
 import org.ds.tuifileman.ui.Theme;
 import org.ds.tuifileman.ui.Wrap;
 import java.io.IOException;
@@ -33,6 +36,9 @@ public final class EditorView {
     private final int tabSize;
     private final boolean useTabs;
     private final boolean autoIndent;
+    /** Colours by file extension; null when the language is unknown or editor.highlight is off. */
+    private final DocumentStyles styles;
+    private final String language;
 
     private Pos cursor = new Pos(0, 0);
     private Pos anchor;
@@ -61,6 +67,25 @@ public final class EditorView {
         this.autoIndent = config.flag("editor.auto_indent", true);
         this.lineNumbers = config.flag("editor.line_numbers", true);
         this.wrap = config.flag("editor.wrap", true);
+        Language found = config.flag("editor.highlight", true) ? Language.forFile(path) : null;
+        if (found != null) {
+            this.language = found.name();
+            this.styles = new DocumentStyles(found, new DocumentStyles.Lines() {
+                @Override
+                public int count() {
+                    return buffer.lineCount();
+                }
+
+                @Override
+                public String line(int index) {
+                    return buffer.line(index);
+                }
+            });
+            buffer.setListener(styles::edited);
+        } else {
+            this.language = null;
+            this.styles = null;
+        }
     }
 
     /** Edits the file (created when it does not exist and {@code create} is set); returns a status message. */
@@ -1019,7 +1044,7 @@ public final class EditorView {
 
     private void drawHeader(TextGraphics g, int w) {
         String tail = "  [Edit, " + buffer.encodingName() + ", " + buffer.lineEnding()
-                + (buffer.dirty() ? ", modified" : "") + "]";
+                + (language == null ? "" : ", " + language) + (buffer.dirty() ? ", modified" : "") + "]";
         Draw.cell(g, 0, 0, w, " " + Draw.shorten(path.toString(), Math.max(10, w - tail.length() - 2)) + tail,
                 theme.headerText(), theme.headerBackground());
     }
@@ -1028,17 +1053,22 @@ public final class EditorView {
         int line = first.line();
         int row = first.row();
         for (int y = 0; y < body && line < buffer.lineCount(); line++, row = 0) {
-            String shown = Draw.expand(buffer.line(line));
+            String text = buffer.line(line);
+            String shown = Draw.expand(text);
+            byte[] colours = styles == null ? null : TextStyle.expand(text, styles.styles(line), shown);
             int[] starts = rows(shown);
             for (; row < starts.length && y < body; row++, y++) {
-                drawRow(g, y + 1, line, row, shown, starts, digits, textWidth);
+                drawRow(g, y + 1, line, row, shown, colours, starts, digits, textWidth);
             }
         }
     }
 
-    /** Draws screen row {@code row} of buffer line {@code index}; {@code starts} are the row starts of {@code shown}. */
-    private void drawRow(TextGraphics g, int y, int index, int row, String shown, int[] starts, int digits,
-                         int textWidth) {
+    /**
+     * Draws screen row {@code row} of buffer line {@code index}; {@code starts} are the row starts of {@code shown},
+     * {@code colours} the style of each of its characters (null for plain text).
+     */
+    private void drawRow(TextGraphics g, int y, int index, int row, String shown, byte[] colours, int[] starts,
+                         int digits, int textWidth) {
         int textX = gutter();
         boolean current = index == cursor.line();
         var background = current ? theme.panelBackground() : theme.appBackground();
@@ -1049,7 +1079,8 @@ public final class EditorView {
         }
         int from = wrap ? starts[row] : left;
         int to = wrap ? Wrap.end(starts, row, shown.length()) : Math.min(shown.length(), left + textWidth);
-        Draw.cell(g, textX, y, textWidth, from < to ? shown.substring(from, to) : "", theme.text(), background);
+        Draw.cell(g, textX, y, textWidth, "", theme.text(), background);
+        Draw.runs(g, theme, textX, y, shown, colours, from, to, background);
         if (!hasSelection() || index < selStart().line() || index > selEnd().line()) {
             return;
         }
@@ -1059,8 +1090,7 @@ public final class EditorView {
         int selFrom = Math.max(visualCol(line, a), from);
         int selTo = Math.min(visualCol(line, b), to);
         if (selTo > selFrom) {
-            Draw.cell(g, textX + selFrom - from, y, selTo - selFrom, shown.substring(selFrom, selTo), theme.text(),
-                    theme.selection());
+            Draw.runs(g, theme, textX + selFrom - from, y, shown, colours, selFrom, selTo, theme.selection());
         }
         if (index < selEnd().line() && row == starts.length - 1 && shown.length() >= from
                 && shown.length() < from + textWidth) {

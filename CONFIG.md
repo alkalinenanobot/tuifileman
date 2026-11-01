@@ -59,6 +59,7 @@ Booleans accept `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`.
 | `auto_indent` | `true` | Enter keeps the indentation of the current line. |
 | `line_numbers` | `true` | Line number gutter in the editor (`Ctrl+L` toggles it). |
 | `wrap` | `true` | Wrap long lines in the editor instead of panning sideways (`Alt+W` toggles it). `Up`/`Down`/`Home`/`End` then move by screen row. |
+| `highlight` | `true` | Colour source files in the editor by file extension (the languages of the viewer's `highlight`); the colours follow every edit, undo and redo. |
 | **`[sync]`** | | |
 | `time_tolerance` | `2s` | Two files whose modified times differ by at most this count as having the same time: directory sync (`Ctrl+F9`), copy/move "overwrite older" and the `diff`/`sync`/`copy`/`move` commands (`--time-tolerance` overrides it there). A whole number with a unit `s`, `m` or `h` (`2s`, `90s`, `5m`, `1h`; without a unit it is seconds); `0` means the times must be exactly equal. |
 

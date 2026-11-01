@@ -961,7 +961,7 @@ public final class FileView implements Closeable {
             }
             Draw.Expanded shown = Draw.expand(line.text(), from, to);
             String text = shown.text();
-            byte[] cs = expandStyles(line.text(), lineStyles(line.text(), line.start()), text);
+            byte[] cs = TextStyle.expand(line.text(), lineStyles(line.text(), line.start()), text);
             if (wrap) {
                 int[] starts = Wrap.rows(text, width);
                 int row = firstLine ? Math.min(textRow, starts.length - 1) : 0;
@@ -1033,22 +1033,6 @@ public final class FileView implements Closeable {
         return out;
     }
 
-    /** The styles of the line after {@link Draw#expand}: a tab is as many cells as spaces it was turned into. */
-    private static byte[] expandStyles(String original, byte[] styles, String expanded) {
-        if (styles == null || expanded.length() == original.length()) {
-            return styles;
-        }
-        byte[] out = new byte[expanded.length()];
-        int at = 0;
-        for (int i = 0; i < original.length() && at < out.length; i++) {
-            int cells = original.charAt(i) == '\t' ? 4 - (at % 4) : 1;
-            for (int k = 0; k < cells && at < out.length; k++) {
-                out[at++] = styles[i];
-            }
-        }
-        return out;
-    }
-
     /**
      * Draws {@code text[start, end)} at the text column; {@code [from, to)} (when {@code from >= 0}) is highlighted.
      * {@code styled} gives the style of every character, or is null for plain text.
@@ -1068,28 +1052,7 @@ public final class FileView implements Closeable {
     }
 
     private void piece(TextGraphics g, int y, String text, byte[] styled, int from, int to, TextColor bg, int origin) {
-        if (to <= from) {
-            return;
-        }
-        g.setBackgroundColor(bg);
-        if (styled == null) {
-            g.setForegroundColor(theme.text());
-            g.putString(new TerminalPosition(textX + from - origin, y), text.substring(from, to));
-            return;
-        }
-        int i = from;
-        while (i < to) {
-            byte style = styled[i];
-            int j = i + 1;
-            while (j < to && styled[j] == style) {
-                j++;
-            }
-            g.setForegroundColor(TextStyle.color(theme, style));
-            g.setModifiers(TextStyle.modifiers(style));
-            g.putString(new TerminalPosition(textX + i - origin, y), text.substring(i, j));
-            i = j;
-        }
-        g.setModifiers(TextStyle.modifiers((byte) 0));
+        Draw.runs(g, theme, textX + from - origin, y, text, styled, from, to, bg);
     }
 
     private void drawHex(TextGraphics g, int w, int h) throws IOException {

@@ -99,6 +99,8 @@ public final class Config {
             # Wrap long lines instead of panning sideways (Alt+W toggles it while editing); Home/End and
             # Up/Down then work on screen rows.
             wrap = true
+            # Colour source files by file extension (the same languages as the viewer); the colours follow the edits.
+            highlight = true
 
             [sync]
             # Two files whose modified times differ by at most this count as having the same time:

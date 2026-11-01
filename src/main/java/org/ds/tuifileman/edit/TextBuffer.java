@@ -41,7 +41,14 @@ public final class TextBuffer {
 
     private record Edit(Pos from, String removed, String inserted) { }
 
+    /** Told after every edit (typing, paste, undo, redo ...) which lines were replaced and by how many. */
+    public interface LinesListener {
+        /** The {@code removed} lines from index {@code from} were replaced by {@code inserted} lines (both at least 1). */
+        void linesReplaced(int from, int removed, int inserted);
+    }
+
     private final List<String> lines = new ArrayList<>();
+    private LinesListener listener;
     private final ArrayDeque<List<Edit>> undoStack = new ArrayDeque<>();
     private final ArrayDeque<List<Edit>> redoStack = new ArrayDeque<>();
     private Charset charset = StandardCharsets.UTF_8;
@@ -155,6 +162,11 @@ public final class TextBuffer {
 
     // ---- information ----
 
+    /** The listener told about every edit, or null for none. */
+    public void setListener(LinesListener listener) {
+        this.listener = listener;
+    }
+
     public int lineCount() {
         return lines.size();
     }
@@ -258,23 +270,33 @@ public final class TextBuffer {
     private Pos apply(Pos from, Pos to, String text) {
         String head = lines.get(from.line()).substring(0, from.col());
         String tail = lines.get(to.line()).substring(to.col());
+        int removed = to.line() - from.line() + 1;
+        Pos end;
+        int inserted;
         if (text.indexOf('\n') < 0) {
             lines.subList(from.line() + 1, to.line() + 1).clear();
             lines.set(from.line(), head + text + tail);
-            return new Pos(from.line(), head.length() + text.length());
+            end = new Pos(from.line(), head.length() + text.length());
+            inserted = 1;
+        } else {
+            String[] parts = text.split("\n", -1);
+            List<String> fresh = new ArrayList<>(parts.length);
+            fresh.add(head + parts[0]);
+            for (int i = 1; i < parts.length - 1; i++) {
+                fresh.add(parts[i]);
+            }
+            String last = parts[parts.length - 1];
+            fresh.add(last + tail);
+            List<String> range = lines.subList(from.line(), to.line() + 1);
+            range.clear();
+            range.addAll(fresh);
+            end = new Pos(from.line() + parts.length - 1, last.length());
+            inserted = parts.length;
         }
-        String[] parts = text.split("\n", -1);
-        List<String> fresh = new ArrayList<>(parts.length);
-        fresh.add(head + parts[0]);
-        for (int i = 1; i < parts.length - 1; i++) {
-            fresh.add(parts[i]);
+        if (listener != null) {
+            listener.linesReplaced(from.line(), removed, inserted);
         }
-        String last = parts[parts.length - 1];
-        fresh.add(last + tail);
-        List<String> range = lines.subList(from.line(), to.line() + 1);
-        range.clear();
-        range.addAll(fresh);
-        return new Pos(from.line() + parts.length - 1, last.length());
+        return end;
     }
 
     private void record(Edit edit) {

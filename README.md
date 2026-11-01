@@ -25,7 +25,7 @@ thousand files it copied as fast as `robocopy /MT:32` and faster than FastCopy a
   Markdown rendered as text. Images (chafa, sixel), PDFs (Poppler), and video and audio (FFmpeg, mpv inside
   the terminal).
 - **Editor** (`F4`): keeps encoding, line endings and BOM. Selection, system clipboard, undo, find/replace,
-  line wrap.
+  line wrap, syntax colours.
 - **File search** (`Alt+F7`): by name and content, in parallel, optionally inside archives.
 - **Multi-rename** (`F2`): masks, counter, search/replace, case change, live preview, undo.
 - **Archives as read-only folders**: zip, jar, docx and anything else the JDK zip reader accepts.
@@ -188,7 +188,9 @@ Previews use external tools; their commands are settings ([CONFIG.md](CONFIG.md)
 ### Editor (`F4`, `Shift+F4` for a new file)
 
 Full-screen editor that keeps encoding (UTF-8/UTF-16/ANSI), line endings and BOM. Settings:
-`editor.tab_size`, `editor.use_tabs`, `editor.auto_indent`, `editor.line_numbers`, `editor.wrap`.
+`editor.tab_size`, `editor.use_tabs`, `editor.auto_indent`, `editor.line_numbers`, `editor.wrap`, `editor.highlight`.
+Source files are coloured by extension like in the viewer (the header shows the language); the colours follow typing,
+paste, undo and redo, including multi-line strings and comments.
 
 | Key | Action |
 |---|---|

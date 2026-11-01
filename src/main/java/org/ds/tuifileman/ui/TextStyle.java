@@ -78,6 +78,25 @@ public final class TextStyle {
         return Character.isLowSurrogate(c) && i > 0 && Character.isHighSurrogate(text.charAt(i - 1)) ? 0 : 3;
     }
 
+    /**
+     * The styles of a line after {@link Draw#expand}: a tab is as many cells as spaces it was turned into, so its
+     * style is repeated. {@code styles} may be null (plain), then the result is null too.
+     */
+    public static byte[] expand(String original, byte[] styles, String expanded) {
+        if (styles == null || expanded.length() == original.length()) {
+            return styles;
+        }
+        byte[] out = new byte[expanded.length()];
+        int at = 0;
+        for (int i = 0; i < original.length() && at < out.length; i++) {
+            int cells = original.charAt(i) == '\t' ? 4 - (at % 4) : 1;
+            for (int k = 0; k < cells && at < out.length; k++) {
+                out[at++] = styles[i];
+            }
+        }
+        return out;
+    }
+
     @SuppressWarnings("unchecked")
     private static EnumSet<SGR>[] modifierTable() {
         EnumSet<SGR>[] table = new EnumSet[16];
