@@ -552,15 +552,44 @@ public final class FileView implements Closeable {
         return from <= 0 ? 0 : (long) ((double) pos / from * to);
     }
 
+    /** The cancel check of long scans: true once Escape was pressed. */
+    private java.util.function.BooleanSupplier escapePressed() {
+        return () -> {
+            try {
+                KeyStroke key = screen.pollInput();
+                return key != null && key.getKeyType() == KeyType.Escape;
+            } catch (IOException e) {
+                return false;
+            }
+        };
+    }
+
+    /** A line number typed as {@code :N}, {@code lN} or {@code line N}. */
+    private static final java.util.regex.Pattern LINE_INPUT =
+            java.util.regex.Pattern.compile("(?:|:|l|line)\\s*(\\d+)");
+
     private void goTo() throws IOException {
-        String input = prompt("Go to (offset, 0xHEX or NN%): ", "");
+        String input = prompt(textMode ? "Go to (:LINE, offset, 0xHEX or NN%): " : "Go to (offset, 0xHEX or NN%): ", "");
         if (input == null || input.isBlank()) {
+            return;
+        }
+        String s = input.trim().toLowerCase(Locale.ROOT);
+        if (s.startsWith(":") || s.startsWith("l")) {
+            java.util.regex.Matcher line = LINE_INPUT.matcher(s);
+            if (!line.matches()) {
+                message = "Not a line number: " + input;
+                return;
+            }
+            try {
+                goToLine(Long.parseLong(line.group(1)));
+            } catch (NumberFormatException e) {
+                message = "Not a line number: " + input;
+            }
             return;
         }
         long size = textMode ? textWindow.size() : fileSize;
         long target;
         try {
-            String s = input.trim().toLowerCase(Locale.ROOT);
             if (s.endsWith("%")) {
                 target = (long) (Double.parseDouble(s.substring(0, s.length() - 1)) / 100.0 * size);
             } else if (s.startsWith("0x")) {
@@ -574,6 +603,52 @@ public final class FileView implements Closeable {
         }
         target = Math.max(0, Math.min(target, size - 1));
         showAt(target, false);
+    }
+
+    /**
+     * Scrolls to the start of line {@code line} (counted in line feeds, from 1). The lines are counted from the nearest
+     * of the start of the file and the position the gutter counted to last, so a jump nearby is quick; a far jump in
+     * a huge file reads it and can be cancelled with Escape.
+     */
+    private void goToLine(long line) throws IOException {
+        if (!textMode) {
+            message = "Line numbers apply to the text view";
+            return;
+        }
+        if (line < 1) {
+            message = "Lines start at 1";
+            return;
+        }
+        long size = textWindow.size();
+        long skip = line - 1;
+        long offset;
+        if (skip == 0) {
+            offset = reader.dataStart();
+        } else {
+            message = "Counting lines... Esc cancels";
+            draw();
+            java.util.function.BooleanSupplier cancelled = escapePressed();
+            if (skip > anchorLines) {
+                offset = textWindow.findNth(anchorPos, size, (byte) '\n', skip - anchorLines, cancelled);
+            } else if (skip * 2 < anchorLines) {
+                offset = textWindow.findNth(0, size, (byte) '\n', skip, cancelled);
+            } else {
+                offset = textWindow.findNthBackward(anchorPos, 0, (byte) '\n', anchorLines - skip + 1, cancelled);
+            }
+            if (offset == ByteWindow.CANCELLED) {
+                message = "Cancelled";
+                return;
+            }
+        }
+        if (offset < 0 || offset >= size) {
+            showAt(size - 1, false);
+            message = "Line " + line + " is past the end: showing the last line";
+            return;
+        }
+        anchorPos = offset;
+        anchorLines = skip;
+        showAt(offset, false);
+        message = "";
     }
 
     /** Scrolls so that {@code offset} is visible; with {@code context} a third of a page is kept above it. */
@@ -738,14 +813,7 @@ public final class FileView implements Closeable {
         long current = matchStart >= 0 ? matchStart : (textMode ? textTop : hexTop);
         message = "Searching... Esc cancels";
         draw();
-        java.util.function.BooleanSupplier cancelled = () -> {
-            try {
-                KeyStroke key = screen.pollInput();
-                return key != null && key.getKeyType() == KeyType.Escape;
-            } catch (IOException e) {
-                return false;
-            }
-        };
+        java.util.function.BooleanSupplier cancelled = escapePressed();
         boolean wrapped = false;
         long hit;
         if (forward) {

@@ -24,6 +24,8 @@
   is meant for the editor.
 - Bookmark list (`Ctrl+D`): typing searches it like in a panel (name prefix first, else any part of the path;
   `Up`/`Down` step through matches, `Backspace` edits, `Esc` clears).
+- Viewer (`F3`): `G` also takes a line number (`:1234`, `l1234`, `line 1234`; text view). The newlines are counted
+  from the nearer of the start of the file and the position the gutter counted to, and `Esc` cancels a long scan.
 
 ## 0.4.2
 

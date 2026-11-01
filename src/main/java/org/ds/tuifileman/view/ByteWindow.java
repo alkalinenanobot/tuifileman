@@ -121,4 +121,64 @@ final class ByteWindow {
         }
         return -1;
     }
+
+    /**
+     * Offset just after the {@code n}-th {@code value} byte (counted from 1) in [from, end); -1 when there are fewer
+     * than {@code n} of them, {@link #CANCELLED} when the cancel check fired.
+     */
+    long findNth(long from, long end, byte value, long n, BooleanSupplier cancelled) throws IOException {
+        long pos = Math.max(0, from);
+        long stop = Math.min(end, size);
+        long seen = 0;
+        long sinceCheck = 0;
+        while (pos < stop) {
+            at(pos);
+            int first = (int) (pos - start);
+            int limit = (int) Math.min(length, stop - start);
+            for (int i = first; i < limit; i++) {
+                if (data[i] == value && ++seen == n) {
+                    return start + i + 1;
+                }
+            }
+            sinceCheck += limit - first;
+            pos = start + limit;
+            if (sinceCheck > CANCEL_CHECK_MASK) {
+                sinceCheck = 0;
+                if (cancelled.getAsBoolean()) {
+                    return CANCELLED;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Like {@link #findNth} going backwards: the {@code n}-th {@code value} byte (counted from 1) before {@code from},
+     * not further back than {@code begin}; the result is the offset just after it.
+     */
+    long findNthBackward(long from, long begin, byte value, long n, BooleanSupplier cancelled) throws IOException {
+        long pos = Math.min(from, size) - 1;
+        long low = Math.max(0, begin);
+        long seen = 0;
+        long sinceCheck = 0;
+        while (pos >= low) {
+            at(pos);
+            int floor = (int) Math.max(0, low - start);
+            int first = (int) (pos - start);
+            for (int i = first; i >= floor; i--) {
+                if (data[i] == value && ++seen == n) {
+                    return start + i + 1;
+                }
+            }
+            sinceCheck += first - floor + 1;
+            pos = start + floor - 1;
+            if (sinceCheck > CANCEL_CHECK_MASK) {
+                sinceCheck = 0;
+                if (cancelled.getAsBoolean()) {
+                    return CANCELLED;
+                }
+            }
+        }
+        return -1;
+    }
 }
