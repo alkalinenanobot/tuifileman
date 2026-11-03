@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - New theme `onedark` (Atom One Dark colours: slate panels, blue accent, yellow folders, solid blue cursor bar in the
   active panel). Themes got `cursor`, `cursorText` and `directory` roles; the other four themes look as before.
