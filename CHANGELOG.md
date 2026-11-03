@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- New theme `onedark` (Atom One Dark colours: slate panels, blue accent, yellow folders, solid blue cursor bar in the
+  active panel). Themes got `cursor`, `cursorText` and `directory` roles; the other four themes look as before.
+
 ## 0.6.0
 
 - Viewer (`F3`): HTML (`.html`, `.htm`, `.xhtml`) and Markdown (`.md`, `.markdown`) files open rendered as styled

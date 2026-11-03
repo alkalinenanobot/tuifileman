@@ -271,7 +271,7 @@ public final class App {
             }
             String themeName = org.ds.tuifileman.config.Config.get().text("theme.name", "dark");
             if (Theme.find(themeName) == null) {
-                status = "Config: unknown theme '" + themeName + "' (dark, light, contrast, mc); using dark";
+                status = "Config: unknown theme '" + themeName + "' (dark, light, contrast, mc, onedark); using dark";
             }
             render();
             while (running) {

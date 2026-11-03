@@ -7,7 +7,8 @@ import java.util.Locale;
 /**
  * Semantic colour roles; every screen draws with these only, so a new palette is just a new factory method.
  * {@code match} is the search hit in the viewer and the marked range in the compare hex view;
- * {@code filler} is the empty side of a one-sided difference; {@code heading}, {@code link} and {@code code}
+ * {@code filler} is the empty side of a one-sided difference; {@code cursor} and {@code cursorText} are the cursor
+ * row of the active panel, {@code directory} the folder names; {@code heading}, {@code link} and {@code code}
  * colour the rendered HTML and Markdown in the viewer; {@code keyword} to {@code meta} (annotations,
  * preprocessor lines, markup tags) colour source code in the viewer.
  */
@@ -21,6 +22,9 @@ public record Theme(
         TextColor accent,
         TextColor border,
         TextColor selection,
+        TextColor cursor,
+        TextColor cursorText,
+        TextColor directory,
         TextColor headerBackground,
         TextColor headerText,
         TextColor success,
@@ -45,7 +49,7 @@ public record Theme(
         TextColor comment,
         TextColor meta) {
 
-    private static final List<Theme> ALL = List.of(dark(), light(), contrast(), mc());
+    private static final List<Theme> ALL = List.of(dark(), light(), contrast(), mc(), oneDark());
 
     /** All built-in themes, in menu order. */
     public static List<Theme> all() {
@@ -68,7 +72,7 @@ public record Theme(
     public static Theme dark() {
         return new Theme("dark", "Dark",
                 rgb(17, 23, 34), rgb(23, 31, 44), rgb(218, 225, 236), rgb(137, 153, 174),
-                rgb(93, 213, 195), rgb(58, 74, 95), rgb(40, 74, 96),
+                rgb(93, 213, 195), rgb(58, 74, 95), rgb(40, 74, 96), rgb(40, 74, 96), rgb(218, 225, 236), rgb(93, 213, 195),
                 rgb(22, 98, 116), rgb(255, 255, 255),
                 rgb(132, 204, 148), rgb(229, 192, 123), rgb(255, 0, 0),
                 rgb(58, 74, 95), rgb(40, 110, 130),
@@ -82,7 +86,7 @@ public record Theme(
     public static Theme light() {
         return new Theme("light", "Light",
                 rgb(238, 241, 245), rgb(255, 255, 255), rgb(28, 34, 44), rgb(102, 112, 126),
-                rgb(0, 100, 160), rgb(176, 184, 196), rgb(204, 226, 246),
+                rgb(0, 100, 160), rgb(176, 184, 196), rgb(204, 226, 246), rgb(204, 226, 246), rgb(28, 34, 44), rgb(0, 100, 160),
                 rgb(0, 100, 160), rgb(255, 255, 255),
                 rgb(22, 128, 58), rgb(176, 106, 0), rgb(200, 32, 32),
                 rgb(214, 220, 229), rgb(255, 226, 120),
@@ -97,7 +101,7 @@ public record Theme(
     public static Theme contrast() {
         return new Theme("contrast", "High contrast",
                 rgb(0, 0, 0), rgb(0, 0, 0), rgb(255, 255, 255), rgb(200, 200, 200),
-                rgb(255, 235, 0), rgb(150, 150, 150), rgb(0, 0, 200),
+                rgb(255, 235, 0), rgb(150, 150, 150), rgb(0, 0, 200), rgb(0, 0, 200), rgb(255, 255, 255), rgb(255, 235, 0),
                 rgb(255, 235, 0), rgb(0, 0, 0),
                 rgb(0, 255, 0), rgb(255, 160, 0), rgb(255, 80, 80),
                 rgb(80, 80, 80), rgb(150, 0, 150),
@@ -112,7 +116,7 @@ public record Theme(
     public static Theme mc() {
         return new Theme("mc", "Midnight Commander",
                 rgb(0, 0, 0), rgb(0, 0, 0), rgb(235, 235, 235), rgb(150, 150, 150),
-                rgb(60, 150, 255), rgb(210, 210, 210), rgb(0, 115, 225),
+                rgb(60, 150, 255), rgb(210, 210, 210), rgb(0, 115, 225), rgb(0, 115, 225), rgb(235, 235, 235), rgb(60, 150, 255),
                 rgb(0, 115, 225), rgb(255, 255, 255),
                 rgb(80, 255, 80), rgb(255, 255, 80), rgb(255, 80, 80),
                 rgb(70, 70, 70), rgb(0, 90, 160),
@@ -121,6 +125,24 @@ public record Theme(
                 rgb(255, 255, 80), rgb(80, 255, 255), rgb(200, 160, 255),
                 rgb(255, 120, 255), rgb(80, 255, 255), rgb(80, 255, 80), rgb(255, 170, 60), rgb(130, 130, 130),
                 rgb(255, 100, 100));
+    }
+
+    /**
+     * Atom One Dark: slate panels on a lighter frame, blue accent, yellow folders. The cursor of the active panel is
+     * a solid accent bar with dark text; the inactive panel keeps the quiet {@code selection} grey.
+     */
+    public static Theme oneDark() {
+        return new Theme("onedark", "One Dark",
+                rgb(44, 49, 58), rgb(33, 37, 43), rgb(200, 204, 212), rgb(127, 132, 142),
+                rgb(97, 175, 239), rgb(75, 82, 99), rgb(62, 68, 81), rgb(97, 175, 239), rgb(27, 29, 35), rgb(229, 192, 123),
+                rgb(97, 175, 239), rgb(27, 29, 35),
+                rgb(152, 195, 121), rgb(209, 154, 102), rgb(224, 108, 117),
+                rgb(62, 68, 81), rgb(55, 85, 128),
+                rgb(64, 38, 44), rgb(122, 50, 60), rgb(35, 58, 42), rgb(50, 102, 64),
+                rgb(62, 54, 36), rgb(122, 100, 46), rgb(40, 44, 52),
+                rgb(224, 108, 117), rgb(97, 175, 239), rgb(152, 195, 121),
+                rgb(198, 120, 221), rgb(229, 192, 123), rgb(152, 195, 121), rgb(209, 154, 102), rgb(92, 99, 112),
+                rgb(224, 108, 117));
     }
 
     private static TextColor rgb(int r, int g, int b) {

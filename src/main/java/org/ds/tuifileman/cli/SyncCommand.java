@@ -689,7 +689,7 @@ final class SyncCommand implements Cli.Command {
             {"-q, --quiet", "no progress and no summary on stderr"},
             {"    --progress MODE", "auto (bar on a terminal, silent otherwise), bar, lines, json, none"},
             {"    --color WHEN", "auto, always or never (NO_COLOR is honoured)"},
-            {"    --theme NAME", "dark, light, contrast or mc (default: from the INI file)"},
+            {"    --theme NAME", "dark, light, contrast, mc or onedark (default: from the INI file)"},
             {"-h, --help", "this help"},
         };
         out.println(out.style(Style.TITLE, Cli.NAME + " sync") + " LEFT RIGHT  "

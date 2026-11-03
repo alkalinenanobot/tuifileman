@@ -583,7 +583,7 @@ final class OpCommand implements Cli.Command {
         options.add(new String[] {"-q, --quiet", "no progress and no summary on stderr"});
         options.add(new String[] {"    --progress MODE", "auto (bar on a terminal, silent otherwise), bar, lines, json, none"});
         options.add(new String[] {"    --color WHEN", "auto, always or never (NO_COLOR is honoured)"});
-        options.add(new String[] {"    --theme NAME", "dark, light, contrast or mc (default: from the INI file)"});
+        options.add(new String[] {"    --theme NAME", "dark, light, contrast, mc or onedark (default: from the INI file)"});
         options.add(new String[] {"-h, --help", "this help"});
         String usage = delete ? "PATH..." : "SOURCE... DESTINATION";
         String about = switch (kind) {

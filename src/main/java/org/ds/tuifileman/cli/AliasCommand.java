@@ -241,7 +241,7 @@ final class AliasCommand implements Cli.Command {
             {"-f, --format FORMAT", "text (default), json or none; written to stdout"},
             {"-q, --quiet", "no summary on stderr"},
             {"    --color WHEN", "auto, always or never (NO_COLOR is honoured)"},
-            {"    --theme NAME", "dark, light, contrast or mc (default: from the INI file)"},
+            {"    --theme NAME", "dark, light, contrast, mc or onedark (default: from the INI file)"},
             {"-h, --help", "this help"},
         };
         out.println(out.style(Style.TITLE, Cli.NAME + " " + COMMAND) + "  "

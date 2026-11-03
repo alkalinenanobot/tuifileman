@@ -20,7 +20,7 @@ public final class Config {
             # Delete a line to get its default. Changes apply the next time the program starts.
 
             [theme]
-            # dark, light, contrast (high contrast) or mc (Midnight Commander look).
+            # dark, light, contrast (high contrast), mc (Midnight Commander look) or onedark (Atom One Dark colours).
             # Also switchable in the Options menu, which saves the choice here.
             name = dark
 

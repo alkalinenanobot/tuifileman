@@ -128,27 +128,28 @@ public final class Panel {
             FileEntry entry = entries.get(i);
             int row = rect.firstEntryRow() + i - first;
             boolean highlighted = i == state.cursor();
+            boolean bar = highlighted && active;
             boolean marked = state.isMarked(entry);
-            TextColor rowBg = highlighted ? theme.selection() : theme.panelBackground();
-            TextColor rowFg = marked
+            TextColor rowBg = bar ? theme.cursor() : highlighted ? theme.selection() : theme.panelBackground();
+            TextColor rowFg = bar
+                    ? theme.cursorText()
+                    : marked
                     ? theme.warning()
                     : highlighted
                     ? theme.text()
-                    : (entry.directory() ? theme.accent() : theme.text());
+                    : (entry.directory() ? theme.directory() : theme.text());
+            TextColor detail = bar ? theme.cursorText() : highlighted ? theme.text() : theme.muted();
             text(g, rect.x() + 1, row, rect.w() - 2, " ".repeat(rect.w() - 2), theme.text(), rowBg);
             text(g, rect.x() + 2, row, nameWidth,
                     (highlighted && active ? ">" : " ") + (marked ? "*" : " ") + entry.name()
                             + (entry.directory() && !entry.name().equals("..") ? "/" : ""),
                     rowFg, rowBg);
-            text(g, sizeX, row, 5, entry.displaySize(),
-                    highlighted ? theme.text() : theme.muted(), rowBg);
+            text(g, sizeX, row, 5, entry.displaySize(), detail, rowBg);
             if (showDate) {
-                text(g, dateX, row, 16, entry.displayModified(),
-                        highlighted ? theme.text() : theme.muted(), rowBg);
+                text(g, dateX, row, 16, entry.displayModified(), detail, rowBg);
             }
             if (showAttributes) {
-                text(g, attributeX, row, attributeWidth, entry.attributes(),
-                        highlighted ? theme.text() : theme.muted(), rowBg);
+                text(g, attributeX, row, attributeWidth, entry.attributes(), detail, rowBg);
             }
         }
 

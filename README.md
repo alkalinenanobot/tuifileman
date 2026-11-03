@@ -30,8 +30,8 @@ thousand files it copied as fast as `robocopy /MT:32` and faster than FastCopy a
 - **Multi-rename** (`F2`): masks, counter, search/replace, case change, live preview, undo.
 - **Archives as read-only folders**: zip, jar, docx and anything else the JDK zip reader accepts.
 - **Everyday tools**: run command (`Ctrl+O`), bookmarks, go to path, names or paths to the clipboard, quick
-  search, sortable columns, mouse, menus and a command palette, four themes (`dark`, `light`, `contrast`,
-  `mc`; Options menu or `Ctrl+P` "theme").
+  search, sortable columns, mouse, menus and a command palette, five themes (`dark`, `light`, `contrast`,
+  `mc`, `onedark`; Options menu or `Ctrl+P` "theme").
 - **Command line** for scripts and AI agents: `diff`, `copy`, `move`, `delete`, `sync`, `find`, `rename`
   with dry runs, reviewable plans, JSON output and fixed exit codes (see [Command line mode](#command-line-mode)).
 

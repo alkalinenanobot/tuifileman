@@ -119,7 +119,7 @@ final class CatCommand implements Cli.Command {
         out.println();
         out.println(out.style(Style.BOLD, "Options"));
         out.println("  " + out.style(Style.ACCENT, String.format("%-22s", "    --color WHEN")) + " auto, always or never (colours the error messages)");
-        out.println("  " + out.style(Style.ACCENT, String.format("%-22s", "    --theme NAME")) + " dark, light, contrast or mc (default: from the INI file)");
+        out.println("  " + out.style(Style.ACCENT, String.format("%-22s", "    --theme NAME")) + " dark, light, contrast, mc or onedark (default: from the INI file)");
         out.println("  " + out.style(Style.ACCENT, String.format("%-22s", "-h, --help")) + " this help");
         out.println();
         out.println(out.style(Style.BOLD, "Archives") + "  a file inside a zip, jar, docx ... is named ARCHIVE!/path/in/it, "
