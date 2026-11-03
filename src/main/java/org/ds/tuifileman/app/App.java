@@ -76,7 +76,8 @@ public final class App {
     private final CommandPalette palette = new CommandPalette(menuBar.menus());
     private final Map<Key, Command> commands = new HashMap<>();
     private int active;
-    private String status = "Ready";
+    /** The message of the last action; shown in place of the key hints until the next key or click. */
+    private String status = "";
     private boolean running = true;
     private Screen screen;
     private UnixTty unixTty;
@@ -1808,6 +1809,11 @@ public final class App {
             running = false;
             return;
         }
+        boolean hintsVisible = status.isEmpty();
+        if (key.getKeyType() != KeyType.MouseEvent
+                || ((MouseAction) key).getActionType() == com.googlecode.lanterna.input.MouseActionType.CLICK_DOWN) {
+            status = "";
+        }
         if (key.getKeyType() == KeyType.MouseEvent) {
             panel().searchClear();
             int columns = screen.getTerminalSize().getColumns();
@@ -1815,7 +1821,7 @@ public final class App {
                 runChosenMenuItem();
                 return;
             }
-            handleMouse((MouseAction) key);
+            handleMouse((MouseAction) key, hintsVisible);
             return;
         }
         if (palette.handleKey(key) || menuBar.handleKey(key)) {
@@ -1881,7 +1887,7 @@ public final class App {
         }
     }
 
-    private void handleMouse(MouseAction mouse) {
+    private void handleMouse(MouseAction mouse, boolean hintsVisible) {
         int width = screen.getTerminalSize().getColumns();
         int height = screen.getTerminalSize().getRows();
         if (width < MIN_WIDTH || height < MIN_HEIGHT) {
@@ -1889,9 +1895,9 @@ public final class App {
         }
         if (mouse.getActionType() == com.googlecode.lanterna.input.MouseActionType.CLICK_DOWN) {
             int row = mouse.getPosition().getRow();
-            if (row == height - 4 || row == height - 3) {
-                Hint hint = hintAt(row == height - 4 ? HINTS_PRIMARY : HINTS_SECONDARY,
-                        mouse.getPosition().getColumn(), width - 2);
+            if (row == height - 1) {
+                Hint hint = hintsVisible ? hintAt(HINTS,
+                        mouse.getPosition().getColumn(), width - 2) : null;
                 if (hint != null) {
                     hint.action().execute(this);
                 }
@@ -1961,16 +1967,15 @@ public final class App {
     }
 
     private int visibleRows() {
-        return Math.max(1, screen.getTerminalSize().getRows() - 15);
+        return Math.max(1, screen.getTerminalSize().getRows() - 6);
     }
 
     private static Panel.Rect leftRect(int width, int height) {
-        return new Panel.Rect(1, 1, (width - 5) / 2, height - 6);
+        return new Panel.Rect(0, 1, width / 2, height - 2);
     }
 
     private static Panel.Rect rightRect(int width, int height) {
-        int x = (width - 5) / 2 + 3;
-        return new Panel.Rect(x, 1, width - x - 1, height - 6);
+        return new Panel.Rect(width / 2, 1, width - width / 2, height - 2);
     }
 
     private void render() throws IOException {
@@ -1998,21 +2003,23 @@ public final class App {
         menuBar.render(g, theme, width);
         palette.render(g, theme, width);
 
-        drawHints(g, height - 4, HINTS_PRIMARY, theme.text(), width - 2);
-        drawHints(g, height - 3, HINTS_SECONDARY, theme.muted(), width - 2);
-        put(g, 2, height - 2, width - 4, status, theme.muted(), theme.appBackground());
+        if (status.isEmpty()) {
+            drawHints(g, height - 1, HINTS, theme.text(), width - 2);
+        } else {
+            put(g, 2, height - 1, width - 3, status, theme.text(), theme.appBackground());
+        }
     }
 
-    /** A clickable entry of the two key-hint rows above the status line. */
+    /** A clickable entry of the key-hint row at the bottom. */
     private record Hint(String key, String label, Command action) {
         int width() {
             return key.length() + 1 + label.length();
         }
     }
 
-    private static final int HINT_GAP = 3;
+    private static final int HINT_GAP = 2;
 
-    private static final List<Hint> HINTS_PRIMARY = List.of(
+    private static final List<Hint> HINTS = List.of(
             new Hint("F2", "rename", App::multiRename),
             new Hint("F3", "view", App::viewFile),
             new Hint("F4", "edit", App::editFile),
@@ -2021,18 +2028,8 @@ public final class App {
             new Hint("F7", "mkdir", App::makeDirectory),
             new Hint("F8", "del", App::deleteSelected),
             new Hint("F9", "menu", app -> app.menuBar.toggle()),
-            new Hint("F10", "quit", app -> app.running = false));
-
-    private static final List<Hint> HINTS_SECONDARY = List.of(
-            new Hint("Ctrl+F3", "compare", App::compareFiles),
-            new Hint("Ctrl+F9", "sync", App::directorySync),
-            new Hint("Shift+F4", "new file", App::newFile),
-            new Hint("Alt+F7", "find", App::findFiles),
-            new Hint("Ctrl+D", "bookmarks", App::showBookmarks),
-            new Hint("Ctrl+L", "go to", App::goToPath),
-            new Hint("Ctrl+O", "run", App::runCommand),
-            new Hint("Ctrl+P", "palette", app -> app.palette.open()),
-            new Hint("Alt+F1/F2", "drive", app -> app.changeDrive(app.active)));
+            new Hint("F10", "quit", app -> app.running = false),
+            new Hint("Ctrl+P", "palette", app -> app.palette.open()));
 
     private void drawHints(TextGraphics g, int y, List<Hint> hints, com.googlecode.lanterna.TextColor labelColor,
                            int rightEdge) {

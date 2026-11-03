@@ -9,8 +9,8 @@ import org.ds.tuifileman.model.EntrySort;
 import org.ds.tuifileman.model.FileEntry;
 import java.util.List;
 
-/** Renders one file panel. Layout: border, title, path, column header,
- * entries, blank, footer. The column headers are clickable: one sorts by that column, the same again reverses.
+/** Renders one file panel. Layout: border with the volume and path as its title, column header, entries, footer,
+ * border. The column headers are clickable: one sorts by that column, the same again reverses.
  * The extension has no column of its own; its header sits at the right end of the name column. */
 public final class Panel {
     private static final String EXTENSION_LABEL = ".EXT";
@@ -20,15 +20,15 @@ public final class Panel {
     /** Screen bounds of a panel. */
     public record Rect(int x, int y, int w, int h) {
         public int visibleRows() {
-            return h - 9;
+            return h - 4;
         }
 
         public int headerRow() {
-            return y + 4;
+            return y + 1;
         }
 
         public int firstEntryRow() {
-            return y + 6;
+            return y + 2;
         }
     }
 
@@ -87,18 +87,10 @@ public final class Panel {
                 new TerminalSize(rect.w(), rect.h()), ' ');
         box(g, rect, edge, theme.appBackground());
 
-        boolean inArchive = state.isVirtual();
-        String root = inArchive ? "ARCHIVE" : state.directory().getRoot() == null
-                ? "" : state.directory().getRoot().toString().replaceAll("[\\\\/]+$", "");
-        String label = inArchive
-                ? "  " + org.ds.tuifileman.fs.Archives.origin(state.directory()).getFileName()
-                : state.volumeLabel().isBlank() ? "" : "  " + state.volumeLabel();
+        String volume = state.isVirtual() || state.volumeLabel().isBlank() ? "" : "[" + state.volumeLabel() + "] ";
         text(g, rect.x() + 2, rect.y(), rect.w() - 4,
-                " " + (root + label).toUpperCase().strip() + " ",
-                edge, theme.appBackground());
-        text(g, rect.x() + 2, rect.y() + 2, rect.w() - 4,
-                shorten(state.displayPath(), rect.w() - 4),
-                theme.text(), theme.panelBackground());
+                " " + shorten(volume + state.displayPath(), rect.w() - 8) + " ",
+                active ? theme.accent() : theme.muted(), theme.appBackground());
 
         List<FileEntry> entries = state.entries();
         Columns c = columns(entries, rect);

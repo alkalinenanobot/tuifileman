@@ -4,6 +4,11 @@
 
 - New theme `onedark` (Atom One Dark colours: slate panels, blue accent, yellow folders, solid blue cursor bar in the
   active panel). Themes got `cursor`, `cursorText` and `directory` roles; the other four themes look as before.
+- Compact main view: the panels touch each other and the screen edges, the volume and path are the panel's top
+  border title (no path row, no blank rows), and the two key-hint rows plus the status row are one bottom line
+  (`F2 rename` ... `Ctrl+P palette`); a message from an action replaces the hints until the next key or click. A
+  36-row terminal shows 30 entries instead of 21. The less common hints (compare, sync, find, bookmarks, go to, run,
+  drive) are in the menus, `F1` and the palette.
 
 ## 0.6.0
 

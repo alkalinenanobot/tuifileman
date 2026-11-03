@@ -67,7 +67,8 @@ terminal. IDE output windows (NetBeans) are not one.
 ## Keys
 
 Every action is also in the menu bar (`F9`) and the command palette (`Ctrl+P`). Help > Keyboard shortcuts
-shows a short list, and the key hints above the status line can be clicked.
+shows a short list, and the key hints on the bottom line can be clicked. A message from an action replaces the hints
+until the next key or click.
 
 ### Panels
 
@@ -97,8 +98,8 @@ The panel title shows the drive and its volume label; the path line shortens lon
 ### Mouse and sorting
 
 - Click selects and activates a panel, double-click opens, the wheel scrolls.
-- A click on a panel title opens the drive list, on the top row the menus, on a key hint above the status line
-  (e.g. `F5 copy`, `Ctrl+D bookmarks`) runs it.
+- A click on a panel title opens the drive list, on the top row the menus, on a key hint on the bottom line
+  (e.g. `F5 copy`, `Ctrl+P palette`) runs it.
 - Directories come first, then files, by name and case-insensitive. A click on a column header sorts the panel
   by that column (the header turns accent-coloured with ▲ ascending / ▼ descending); clicking it again
   reverses. `.EXT` at the right end of the name column sorts by extension (names without one first). A new
