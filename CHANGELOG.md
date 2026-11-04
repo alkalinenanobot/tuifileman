@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1
+
+- `sync` copies while it is still comparing: with `--yes`, no `--dry-run` or `--plan`, and no progress bar to draw
+  (`--quiet`, `--progress none`, or output that is not a terminal), new folders are created and files are copied as the
+  scan finds them instead of after it. Deletions of a mirror still wait for the end of the scan, so nothing is removed
+  before the whole tree has been seen. Runs with a prompt, a bar, a plan or a dry run work as before. On a large tree
+  with a few changed files this saves about the time of the copying (0.6 s of 3.8 s for 3,000 changed files in a tree of
+  300,000). If the scan is cancelled, the files copied so far stay, as with a cancelled copy.
+- `sync` writes each replaced file as before (temporary name, then rename, so a failed copy never damages the target),
+  but no longer tries to delete the temporary file after a successful rename and checks the target folder with one call.
+
 ## 0.7.0
 
 - New theme `onedark` (Atom One Dark colours: slate panels, blue accent, yellow folders, solid blue cursor bar in the

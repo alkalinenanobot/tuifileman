@@ -2,10 +2,12 @@ package org.ds.tuifileman.app;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -65,6 +67,73 @@ final class CopyScheduler {
         } catch (InterruptedException e) {
             pool.shutdownNow();
             return false;
+        }
+    }
+
+    /**
+     * The lanes of {@link #copyFiles} for a list that is still being made: tasks are {@link #submit submitted} one at a
+     * time (from any thread) and start at once, so copying overlaps with whatever produces the tasks.
+     */
+    static final class Feed<T> {
+        private static final Object END = new Object();
+
+        private final ToLongFunction<T> size;
+        private final Consumer<T> copy;
+        private final BooleanSupplier cancelled;
+        private final ExecutorService pool;
+        private final BlockingQueue<Object> big = new LinkedBlockingQueue<>();
+        private final Thread bigWorker;
+
+        Feed(ToLongFunction<T> size, Consumer<T> copy, int threads, BooleanSupplier cancelled) {
+            this.size = size;
+            this.copy = copy;
+            this.cancelled = cancelled;
+            this.pool = newPool(threads);
+            this.bigWorker = new Thread(this::takeBig, "copy-big");
+            bigWorker.setDaemon(true);
+            bigWorker.start();
+        }
+
+        @SuppressWarnings("unchecked")
+        private void takeBig() {
+            try {
+                for (Object task = big.take(); task != END; task = big.take()) {
+                    copy.accept((T) task);
+                }
+            } catch (InterruptedException ignored) {
+                // the job is over
+            }
+        }
+
+        void submit(T task) {
+            if (size.applyAsLong(task) >= BIG_FILE) {
+                big.add(task);
+            } else {
+                pool.execute(() -> copy.accept(task));
+            }
+        }
+
+        /**
+         * No more tasks: waits until every submitted one has finished.
+         *
+         * @return false when the calling thread was interrupted: the caller is then to treat the job as cancelled
+         */
+        boolean finish() {
+            big.add(END);
+            pool.shutdown();
+            try {
+                while (!pool.awaitTermination(100, TimeUnit.MILLISECONDS)) {
+                    if (cancelled.getAsBoolean()) {
+                        pool.shutdownNow();
+                    }
+                }
+                bigWorker.join();
+                return true;
+            } catch (InterruptedException e) {
+                pool.shutdownNow();
+                bigWorker.interrupt();
+                return false;
+            }
         }
     }
 

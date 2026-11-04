@@ -30,7 +30,11 @@ public final class SyncJob implements Job {
     private final Path rightRoot;
     private final List<Item> folders = new ArrayList<>();
     private final List<Item> files = new ArrayList<>();
-    private final List<Item> deletes = new ArrayList<>();
+    private final List<Item> deletes = Collections.synchronizedList(new ArrayList<>());
+    /** Only for a job that is {@link #offer fed} during the scan: takes the files as they come. */
+    private final CopyScheduler.Feed<Item> feed;
+    private final AtomicInteger offered = new AtomicInteger();
+    private final long createdNanos = System.nanoTime();
     private final AtomicLong bytesTotal = new AtomicLong();
     private final AtomicLong bytesDone = new AtomicLong();
     private final AtomicInteger filesDone = new AtomicInteger();
@@ -46,6 +50,7 @@ public final class SyncJob implements Job {
     public SyncJob(Path leftRoot, Path rightRoot, List<Item> items) {
         this.leftRoot = leftRoot;
         this.rightRoot = rightRoot;
+        this.feed = null;
         for (Item item : items) {
             switch (item.action()) {
                 case TO_LEFT, TO_RIGHT -> {
@@ -63,6 +68,64 @@ public final class SyncJob implements Job {
         // Stable sorts by depth, as CopyScheduler.byLevel needs them: parents created first, children deleted first.
         folders.sort(Comparator.comparingInt(this::depth));
         deletes.sort(Comparator.comparingInt(this::depth).reversed());
+    }
+
+    /**
+     * A job that acts while the scan still runs: {@link #offer} every item the scan finds (from any thread; the
+     * action must be set), then call {@link #finishStreaming}. New folders are created at once and files are copied
+     * as they arrive; deletions wait for the end of the scan, so nothing is removed before the whole tree was seen.
+     */
+    public SyncJob(Path leftRoot, Path rightRoot) {
+        this.leftRoot = leftRoot;
+        this.rightRoot = rightRoot;
+        this.feed = new CopyScheduler.Feed<>(SyncJob::size, this::copyItem, Parallel.threads(leftRoot, rightRoot),
+                () -> cancelled);
+    }
+
+    /**
+     * Takes one item of a scan that is still running. A folder is created before this returns, so the scan can go on
+     * into it and every file below finds its folder made; a file is queued for copying.
+     */
+    public void offer(Item item) {
+        switch (item.action()) {
+            case TO_LEFT, TO_RIGHT -> {
+                offered.incrementAndGet();
+                if (item.directory()) {
+                    copyItem(item);
+                } else {
+                    bytesTotal.addAndGet(size(item));
+                    feed.submit(item);
+                }
+            }
+            case DELETE_LEFT, DELETE_RIGHT -> deletes.add(item);
+            default -> { }
+        }
+    }
+
+    /** The scan is over (or was stopped, see {@link #cancel}): waits for the copies, then does the deletions. */
+    public void finishStreaming() {
+        try {
+            phase = "Copying";
+            if (!feed.finish()) {
+                cancelled = true;
+            }
+            deletes.sort(Comparator.comparingInt(this::depth).reversed());
+            deleteAll();
+        } finally {
+            elapsedNanos = System.nanoTime() - createdNanos;
+            finished = true;
+        }
+    }
+
+    /** Stops a streaming job whose scan failed or was cancelled: what is queued is dropped, nothing is deleted. */
+    public void abort() {
+        cancelled = true;
+        finishStreaming();
+    }
+
+    /** Time from the creation of a streaming job to {@link #finishStreaming}. */
+    public long elapsedMillis() {
+        return elapsedNanos / 1_000_000;
     }
 
     private static long size(Item item) {
@@ -114,7 +177,7 @@ public final class SyncJob implements Job {
 
     @Override
     public int filesTotal() {
-        return folders.size() + files.size() + deletes.size();
+        return feed != null ? offered.get() + deletes.size() : folders.size() + files.size() + deletes.size();
     }
 
     @Override
@@ -165,14 +228,18 @@ public final class SyncJob implements Job {
                     || !CopyScheduler.copyFiles(files, SyncJob::size, this::copyItem, threads, () -> cancelled)) {
                 cancelled = true;
             }
-            phase = "Deleting";
-            if (!deletes.isEmpty() && !cancelled
-                    && !CopyScheduler.byLevel(deletes, this::depth, this::deleteItem, deleteThreads(), () -> cancelled)) {
-                cancelled = true;
-            }
+            deleteAll();
         } finally {
             elapsedNanos = System.nanoTime() - start;
             finished = true;
+        }
+    }
+
+    private void deleteAll() {
+        phase = "Deleting";
+        if (!deletes.isEmpty() && !cancelled
+                && !CopyScheduler.byLevel(deletes, this::depth, this::deleteItem, deleteThreads(), () -> cancelled)) {
+            cancelled = true;
         }
     }
 
@@ -190,7 +257,10 @@ public final class SyncJob implements Job {
         return onLeft && onRight ? Parallel.threads(leftRoot, rightRoot) : Parallel.threads(onLeft ? leftRoot : rightRoot);
     }
 
-    /** Called by several threads at once; folders before any file, so no file creates a folder planned as new. */
+    /**
+     * Called by several threads at once; folders before any file (a file would create a folder planned as new
+     * itself): in the level order of {@link #run}, or at once by {@link #offer}, before the scan enters the folder.
+     */
     private void copyItem(Item item) {
         if (cancelled) {
             return;
@@ -226,7 +296,10 @@ public final class SyncJob implements Job {
 
     /** Returns false when cancelled half way (the partial temp file is removed). */
     private boolean copyFile(Path source, Path target, boolean replace) throws IOException {
-        Files.createDirectories(target.getParent());
+        Path parent = target.getParent();
+        if (!Files.isDirectory(parent)) {
+            Files.createDirectories(parent);
+        }
         // A random name, created only if it does not exist: never deletes a user's file of that name, and two
         // syncs into one folder cannot take each other's temp file.
         Path temp = target.resolveSibling(target.getFileName() + ".tfm-"
@@ -236,6 +309,7 @@ public final class SyncJob implements Job {
         } catch (NativeCopy.Cancelled e) {
             return false;
         }
+        boolean moved = false;
         try {
             if (!replace) {
                 Files.move(temp, target);
@@ -247,8 +321,11 @@ public final class SyncJob implements Job {
                     Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
                 }
             }
+            moved = true;
         } finally {
-            Files.deleteIfExists(temp);
+            if (!moved) {
+                Files.deleteIfExists(temp);
+            }
         }
         return true;
     }

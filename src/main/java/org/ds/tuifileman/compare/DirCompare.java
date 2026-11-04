@@ -25,6 +25,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -177,8 +178,22 @@ public final class DirCompare {
                                   AtomicBoolean cancel, AtomicInteger progress, IgnoreMatcher ignore,
                                   AtomicInteger ignored, Predicate<String> exclude, long toleranceMillis,
                                   Queue<Unreadable> unreadable) throws IOException {
+        return scan(left, right, recursive, contents, contentVerdict, cancel, progress, ignore, ignored, exclude,
+                toleranceMillis, unreadable, null);
+    }
+
+    /**
+     * As above; {@code sink} (nullable) is handed every item of the result as soon as its status is known, from the
+     * scan's own threads (so it must be thread safe) and in no global order, but a folder is always handed over
+     * before anything inside it is looked at. A command can start acting on items while the scan still runs. The
+     * returned list is the same as without a sink.
+     */
+    public static List<Item> scan(Path left, Path right, boolean recursive, boolean contents, boolean contentVerdict,
+                                  AtomicBoolean cancel, AtomicInteger progress, IgnoreMatcher ignore,
+                                  AtomicInteger ignored, Predicate<String> exclude, long toleranceMillis,
+                                  Queue<Unreadable> unreadable, Consumer<Item> sink) throws IOException {
         Context context = new Context(recursive, contents, contents && contentVerdict, cancel, progress, ignored,
-                exclude, toleranceMillis, unreadable);
+                exclude, toleranceMillis, unreadable, sink);
         ForkJoinPool pool = new ForkJoinPool(Parallel.threads(left, right));
         try {
             DirTask root = new DirTask(context, left, right, "", ignore);
@@ -197,7 +212,7 @@ public final class DirCompare {
 
     private record Context(boolean recursive, boolean contents, boolean contentVerdict, AtomicBoolean cancel,
                            AtomicInteger progress, AtomicInteger ignored, Predicate<String> exclude,
-                           long toleranceMillis, Queue<Unreadable> unreadable) { }
+                           long toleranceMillis, Queue<Unreadable> unreadable, Consumer<Item> sink) { }
 
     /** Both sides of one name; {@code skip} marks links and unreadable entries (skipped on both sides). */
     private static final class Pair {
@@ -260,7 +275,7 @@ public final class DirCompare {
                 if (by != 0) {
                     context.ignored().incrementAndGet();
                     if (context.recursive() || !(ls != null ? ls : rs).directory()) {
-                        slots.add(new Item(relative, ls, rs, Status.IGNORED, by));
+                        add(slots, new Item(relative, ls, rs, Status.IGNORED, by));
                     }
                     continue;
                 }
@@ -272,7 +287,7 @@ public final class DirCompare {
                 if (directory && !context.recursive()) {
                     continue;
                 }
-                slots.add(new Item(relative, ls, rs, ls != null ? Status.ONLY_LEFT : Status.ONLY_RIGHT));
+                add(slots, new Item(relative, ls, rs, ls != null ? Status.ONLY_LEFT : Status.ONLY_RIGHT));
                 if (directory) {
                     slots.add(child(relative, pair));
                 }
@@ -282,12 +297,24 @@ public final class DirCompare {
                 if (slot instanceof Item item) {
                     out.add(item);
                 } else if (slot instanceof Pending pending) {
-                    out.add(new Item(pending.relative(), pending.left(), pending.right(), pending.task().join()));
+                    Item done = new Item(pending.relative(), pending.left(), pending.right(), pending.task().join());
+                    if (context.sink() != null) {
+                        context.sink().accept(done);
+                    }
+                    out.add(done);
                 } else {
                     out.addAll(((DirTask) slot).join());
                 }
             }
             return out;
+        }
+
+        /** Adds an item to the result of this folder and hands it to the sink, if there is one. */
+        private void add(List<Object> slots, Item item) {
+            slots.add(item);
+            if (context.sink() != null) {
+                context.sink().accept(item);
+            }
         }
 
         private void both(List<Object> slots, String relative, Pair pair, Side ls, Side rs) {
@@ -296,14 +323,14 @@ public final class DirCompare {
                     slots.add(child(relative, pair));
                 }
             } else if (ls.directory() != rs.directory()) {
-                slots.add(new Item(relative, ls, rs, Status.TYPE_MISMATCH));
+                add(slots, new Item(relative, ls, rs, Status.TYPE_MISMATCH));
             } else if (context.contents() && ls.size() == rs.size()) {
                 ContentTask task = new ContentTask(context.cancel(), pair.path[0], pair.path[1], ls, rs,
                         context.toleranceMillis(), context.contentVerdict());
                 task.fork();
                 slots.add(new Pending(relative, ls, rs, task));
             } else {
-                slots.add(new Item(relative, ls, rs, context.contentVerdict() ? Status.DIFFERENT
+                add(slots, new Item(relative, ls, rs, context.contentVerdict() ? Status.DIFFERENT
                         : byTime(ls, rs, false, context.toleranceMillis())));
             }
         }

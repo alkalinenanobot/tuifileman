@@ -97,6 +97,46 @@ class SyncJobTest {
         assertEquals(490, job.filesDone(), "90 folders and 400 files");
     }
 
+    private SyncJob streamedSync(Mode mode) throws Exception {
+        SyncJob job = new SyncJob(left, right);
+        DirCompare.scan(left, right, true, false, false, new AtomicBoolean(), new AtomicInteger(),
+                org.ds.tuifileman.ignore.IgnoreMatcher.NONE, new AtomicInteger(), relative -> false,
+                DirCompare.TIME_TOLERANCE_MILLIS, new java.util.concurrent.ConcurrentLinkedQueue<>(), item -> {
+                    item.setAction(DirCompare.proposed(item, mode));
+                    job.offer(item);
+                });
+        job.finishStreaming();
+        return job;
+    }
+
+    @Test
+    void aMirrorFedWhileTheScanRunsGivesTheSameResult() throws Exception {
+        setUp();
+        for (int a = 0; a < 10; a++) {
+            for (int b = 0; b < 8; b++) {
+                for (int f = 0; f < 5; f++) {
+                    file(left, "a" + a + "/b" + b + "/f" + f + ".txt", a + "-" + b + "-" + f, 1_000 + f);
+                }
+            }
+        }
+        file(left, "keep.txt", "K", 2_000);
+        file(right, "keep.txt", "K", 2_000);
+        file(left, "changed.txt", "now", 100_000);
+        file(right, "changed.txt", "was!", 0);
+        file(right, "stale/inner/old.txt", "o");
+        file(right, "stale.txt", "s");
+        SyncJob job = streamedSync(Mode.MIRROR_TO_RIGHT);
+        assertTrue(job.isDone());
+        assertTrue(job.errors().isEmpty(), job.errors().toString());
+        assertEquals(tree(left), tree(right));
+        assertEquals("now", Files.readString(right.resolve("changed.txt")));
+        assertEquals(BASE + 100_000, modified(right.resolve("changed.txt")));
+        assertEquals(BASE + 1_003, modified(right.resolve("a2/b3/f3.txt")));
+        assertEquals(401, job.copied(), "400 new files and the changed one");
+        assertEquals(4, job.deleted(), "stale, stale/inner, stale/inner/old.txt and stale.txt");
+        assertEquals(0, job.filesTotal() - job.filesDone());
+    }
+
     @Test
     void deletesRunInParallelLevelsWithFolderContentFirst() throws Exception {
         // Enough items for the parallel path; a folder deleted before its content would fail as "not empty".

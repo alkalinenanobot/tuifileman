@@ -28,6 +28,7 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * {@code sync LEFT RIGHT}: the directory synchronisation of the file manager (Ctrl+F9), for scripts.
@@ -137,6 +138,7 @@ final class SyncCommand implements Cli.Command {
         String modeName = fromPlan ? "plan" : modeName(mode);
 
         List<Item> items;
+        SyncJob streamed = null;
         // Entries the scan could not read: nothing below them is copied or deleted, so the run is incomplete.
         List<Job.Problem> unreadable = new ArrayList<>();
         Stats.begin(args.has("stats"), "scan");
@@ -160,22 +162,45 @@ final class SyncCommand implements Cli.Command {
             }
             List<Item> scanned;
             Queue<DirCompare.Unreadable> missed = new ConcurrentLinkedQueue<>();
+            // Nothing to ask, nothing to show first (no prompt, no dry run, no progress bar to draw): the copying
+            // starts while the scan still runs. Deletions still wait for the end of the scan.
+            if (!dryRun && args.has("yes") && Progress.resolve(progressMode, quiet, err) == Progress.Mode.NONE) {
+                streamed = new SyncJob(left, right);
+                SyncJob watched = streamed;
+                Thread watcher = new Thread(() -> OpCommand.watch(watched), "cancel-watch");
+                watcher.setDaemon(true);
+                watcher.start();
+            }
+            SyncJob live = streamed;
+            Consumer<Item> sink = live == null ? null : item -> {
+                item.setAction(DirCompare.proposed(item, mode));
+                live.offer(item);
+            };
             try (Progress progress = Progress.start(progressMode, quiet, console, "Comparing",
                     () -> Progress.Snapshot.counting(examined.get(), "entries"))) {
-                scanned = DirCompare.scan(left, right, !args.has("shallow"), args.has("content"), Cli.CANCEL, examined,
-                        ignore, ignored, relative -> DiffCommand.excluded(relative, excludes), tolerance, missed);
+                scanned = DirCompare.scan(left, right, !args.has("shallow"), args.has("content"), false, Cli.CANCEL,
+                        examined, ignore, ignored, relative -> DiffCommand.excluded(relative, excludes), tolerance,
+                        missed, sink);
                 Stats.ignored(ignored.get());
             } catch (IOException e) {
+                if (live != null) {
+                    live.abort();
+                }
                 return fail(err, Exit.FATAL, "cannot read folder: " + e.getMessage());
             }
             for (DirCompare.Unreadable entry : missed) {
                 unreadable.add(new Job.Problem(entry.path().toString(), "cannot read, not compared: " + entry.reason()));
             }
             if (Cli.CANCEL.get()) {
+                if (live != null) {
+                    live.abort();
+                }
                 return Exit.CANCELLED;
             }
             items = new ArrayList<>(scanned);
-            DirCompare.apply(items, mode);
+            if (live == null) {
+                DirCompare.apply(items, mode);   // a streamed run set every action as the item was found
+            }
         }
 
         List<Line> lines = new ArrayList<>();
@@ -209,6 +234,9 @@ final class SyncCommand implements Cli.Command {
         }
         boolean showIgnored = args.has("show-ignored");
 
+        if (streamed != null) {
+            streamed.finishStreaming();
+        }
         if (dryRun || copies + deletes == 0 && !hasFolderWork(lines)) {
             Report report = new Report(modeName, dryRun, copies, deletes, bytes, skipped, ignoredItems, showIgnored, 0,
                     lines, unreadable, "");
@@ -224,7 +252,7 @@ final class SyncCommand implements Cli.Command {
         }
         Stats.phase("prepare");
         return apply(console, format, progressMode, quiet, left, right, items, modeName, lines, skipped, ignoredItems,
-                showIgnored, unreadable);
+                showIgnored, unreadable, streamed);
     }
 
     private static boolean hasFolderWork(List<Line> lines) {
@@ -238,20 +266,26 @@ final class SyncCommand implements Cli.Command {
 
     private int apply(Console console, Format format, Progress.Mode progressMode, boolean quiet, Path left, Path right,
                       List<Item> items, String modeName, List<Line> lines, int skipped, int ignored,
-                      boolean showIgnored, List<Job.Problem> unreadable) {
+                      boolean showIgnored, List<Job.Problem> unreadable, SyncJob streamed) {
         Console.Out err = console.err();
-        AtomicReference<SyncJob> current = new AtomicReference<>();
-        long started = System.nanoTime();
         SyncJob job;
-        try (Progress progress = Progress.start(progressMode, quiet, console, "Synchronizing", () -> snapshot(current.get()))) {
-            job = new SyncJob(left, right, items);
-            current.set(job);
-            Thread watcher = new Thread(() -> OpCommand.watch(job), "cancel-watch");
-            watcher.setDaemon(true);
-            watcher.start();
-            job.run();
+        long elapsedMs;
+        if (streamed != null) {
+            job = streamed;   // already done: it copied while the scan ran
+            elapsedMs = job.elapsedMillis();
+        } else {
+            AtomicReference<SyncJob> current = new AtomicReference<>();
+            long started = System.nanoTime();
+            try (Progress progress = Progress.start(progressMode, quiet, console, "Synchronizing", () -> snapshot(current.get()))) {
+                job = new SyncJob(left, right, items);
+                current.set(job);
+                Thread watcher = new Thread(() -> OpCommand.watch(job), "cancel-watch");
+                watcher.setDaemon(true);
+                watcher.start();
+                job.run();
+            }
+            elapsedMs = (System.nanoTime() - started) / 1_000_000;
         }
-        long elapsedMs = (System.nanoTime() - started) / 1_000_000;
         if (job.isCancelled()) {
             err.println(err.style(Style.WARN, "cancelled") + err.style(Style.MUTED, " - " + job.summary()));
             return Exit.CANCELLED;
