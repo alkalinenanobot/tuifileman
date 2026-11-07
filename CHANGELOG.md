@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0
+
+- Both panels open in the folders they were in when the program was last closed (`last-dirs.txt` next to the config,
+  updated on every change, so a killed terminal loses nothing). Start folders given on the command line still win;
+  a folder that is gone falls back to the current folder.
+- Viewer: select text with the mouse. Dragging selects only the text, never the line numbers, and wrapped rows join
+  without a line break; releasing the button copies the selection (tabs kept) to the system clipboard, `c` or `Ctrl+C`
+  copies again, `Esc` clears it. Dragging past the top or bottom scrolls.
+- Viewer: wrapped rows of an indented line or a list item (rendered HTML and Markdown included) line up under the text
+  instead of starting at the first column.
+
 ## 0.7.1
 
 - `sync` copies while it is still comparing: with `--yes`, no `--dry-run` or `--plan`, and no progress bar to draw

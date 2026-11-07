@@ -78,11 +78,17 @@ class FileViewGoToTest {
     }
 
     @Test
-    void aPlainNumberIsALineInEveryForm() throws Exception {
+    void everyInputFormReachesItsLineOrOffset() throws Exception {
         for (String input : new String[] {"50", "  50 ", "l50", "line 50", "L50", "Line  50"}) {
             assertEquals("line 050", row(show(document("\n"), goTo(input)), 1), input);
         }
         assertEquals("line 001", row(show(document("\n"), keys(goTo("50"), goTo("1"))), 1));
+        assertEquals("line 003", row(show(document("\n"), goTo(":20")), 1), "byte 20 is inside line 3");
+        assertEquals("line 003", row(show(document("\n"), goTo(": 20")), 1));
+        assertEquals("line 003", row(show(document("\n"), goTo(":0x14")), 1));
+        assertEquals("line 003", row(show(document("\n"), goTo("0x14")), 1));
+        assertEquals("line 051", row(show(document("\n"), goTo("50%")), 1));
+        assertEquals("line 020", row(show(document("\n"), goTo("20")), 1), "without the colon it is line 20");
     }
 
     @Test
@@ -123,16 +129,6 @@ class FileViewGoToTest {
         TerminalScreen screen = show(document("\n"), goTo("99999999999999999999"));
         assertTrue(row(screen, ROWS - 2).contains("Not a line number"), row(screen, ROWS - 2));
         assertEquals("line 001", row(screen, 1));
-    }
-
-    @Test
-    void aColonMakesTheNumberAByteOffset() throws Exception {
-        assertEquals("line 003", row(show(document("\n"), goTo(":20")), 1), "byte 20 is inside line 3");
-        assertEquals("line 003", row(show(document("\n"), goTo(": 20")), 1));
-        assertEquals("line 003", row(show(document("\n"), goTo(":0x14")), 1));
-        assertEquals("line 003", row(show(document("\n"), goTo("0x14")), 1));
-        assertEquals("line 051", row(show(document("\n"), goTo("50%")), 1));
-        assertEquals("line 020", row(show(document("\n"), goTo("20")), 1), "without the colon it is line 20");
     }
 
     @Test

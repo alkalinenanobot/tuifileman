@@ -86,7 +86,7 @@ class FileSearchTest {
     }
 
     @Test
-    void depthLimitCountsFolderLevels() throws Exception {
+    void depthLimitCountsFolderLevelsAndAnArchiveCountsAsAFolder() throws Exception {
         Fixtures.file(root, "top.txt", "x");
         Fixtures.file(root, "one/a.txt", "x");
         Fixtures.file(root, "one/two/b.txt", "x");
@@ -94,6 +94,12 @@ class FileSearchTest {
         assertEquals(List.of("top.txt"), find("*.txt", false, "", false, 1));
         assertEquals(List.of("one/a.txt", "top.txt"), find("*.txt", false, "", false, 2));
         assertEquals(List.of("one/a.txt", "one/two/b.txt", "top.txt"), find("*.txt", false, "", false, 3));
+
+        zip("pack.zip", "top.txt", "x", "dir/deep.txt", "x");
+        assertEquals(List.of("top.txt"), find("*.txt", true, "", false, 1));
+        assertEquals(List.of("one/a.txt", "pack.zip/top.txt", "top.txt"), find("*.txt", true, "", false, 2));
+        assertEquals(List.of("one/a.txt", "one/two/b.txt", "pack.zip/dir/deep.txt", "pack.zip/top.txt", "top.txt"),
+                find("*.txt", true, "", false, 3));
     }
 
     @Test
@@ -204,7 +210,7 @@ class FileSearchTest {
 
     @Test
     void archivesAreSearchedOnlyWhenAsked() throws Exception {
-        zip("pack.zip", "readme.txt", "hello", "dir/notes.txt", "needle inside", "dir/skip.bin", "x");
+        Path archive = zip("pack.zip", "readme.txt", "hello", "dir/notes.txt", "needle inside", "dir/skip.bin", "x");
         Fixtures.file(root, "plain.txt", "x");
 
         assertEquals(List.of("plain.txt"), find("*.txt"));
@@ -216,11 +222,6 @@ class FileSearchTest {
 
         assertEquals(List.of("pack.zip/dir/notes.txt"), find("*", true, "needle", false, FileSearch.UNLIMITED));
         assertEquals(List.of(), find("*", false, "needle", false, FileSearch.UNLIMITED));
-    }
-
-    @Test
-    void anArchiveHitKnowsItsArchiveAndFolder() throws Exception {
-        Path archive = zip("pack.zip", "dir/notes.txt", "hello");
 
         last = new FileSearch(new Query(root, "notes.txt", true, "", false, FileSearch.UNLIMITED));
         last.run();
@@ -229,17 +230,8 @@ class FileSearchTest {
         assertEquals(archive.toString(), hit.archive());
         assertEquals("/dir", hit.folder());
         assertEquals("notes.txt", hit.name());
-        assertEquals(5, hit.size());
+        assertEquals(13, hit.size());
         assertEquals(archive + "!/dir/notes.txt", hit.path());
-    }
-
-    @Test
-    void anArchiveCountsAsAFolderForTheDepthLimit() throws Exception {
-        zip("pack.zip", "top.txt", "x", "dir/deep.txt", "x");
-
-        assertEquals(List.of(), find("*.txt", true, "", false, 1));
-        assertEquals(List.of("pack.zip/top.txt"), find("*.txt", true, "", false, 2));
-        assertEquals(2, find("*.txt", true, "", false, 3).size());
     }
 
     @Test

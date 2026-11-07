@@ -51,26 +51,25 @@ class WildcardsTest {
     }
 
     @Test
-    void theResultIsSortedIgnoringCase() throws Exception {
+    void theResultIsSortedIgnoringCaseWithAFixedOrderForCaseTwins() throws Exception {
         for (String name : List.of("b.txt", "A.txt", "c.txt", "B2.txt")) {
             Fixtures.file(folder, name, "x");
         }
         assertEquals(List.of("A.txt", "b.txt", "B2.txt", "c.txt"), expand("*.txt"));
-    }
 
-    @Test
-    void namesDifferingOnlyInCaseHaveAFixedOrder() throws Exception {
-        Fixtures.file(folder, "probe", "x");
-        org.junit.jupiter.api.Assumptions.assumeFalse(java.nio.file.Files.exists(folder.resolve("PROBE")),
-                "needs a case-sensitive file system");
+        Path twins = java.nio.file.Files.createDirectory(folder.resolve("twins"));
+        Fixtures.file(twins, "probe", "x");
+        if (java.nio.file.Files.exists(twins.resolve("PROBE"))) {
+            return;
+        }
         // Created in both orders: the result must not follow the directory's own order.
         for (List<String> names : List.of(List.of("foo.txt", "Foo.txt", "FOO.txt"), List.of("FOO.txt", "Foo.txt", "foo.txt"))) {
             for (String name : names) {
-                Fixtures.file(folder, name, "x");
+                Fixtures.file(twins, name, "x");
             }
-            assertEquals(List.of("FOO.txt", "Foo.txt", "foo.txt"), expand("*.txt"));
+            assertEquals(List.of("FOO.txt", "Foo.txt", "foo.txt"), expand("twins" + File.separator + "*.txt"));
             for (String name : names) {
-                java.nio.file.Files.delete(folder.resolve(name));
+                java.nio.file.Files.delete(twins.resolve(name));
             }
         }
     }
@@ -100,13 +99,9 @@ class WildcardsTest {
     }
 
     @Test
-    void aWildcardInAParentSegmentIsAUsageError() {
+    void aWildcardInAParentSegmentOrAMissingParentIsAUsageError() {
         assertThrows(Args.UsageException.class, () -> Wildcards.expand(folder + File.separator + "*" + File.separator + "x.txt"));
         assertThrows(Args.UsageException.class, () -> Wildcards.expand("plain.txt"), "no wildcard at all is not expandable");
-    }
-
-    @Test
-    void aMissingParentIsAUsageError() {
         assertThrows(Args.UsageException.class, () -> Wildcards.expand(pattern("missing") + File.separator + "*.txt"));
     }
 }

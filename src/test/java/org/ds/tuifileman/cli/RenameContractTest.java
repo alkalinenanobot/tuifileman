@@ -10,7 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** {@code rename}: plans, safety, the undo log and the chain, swap and case-only renames of the engine. */
+/** {@code rename}: plans, safety and the undo log. The engine's chain, swap and case-only cases are in app/RenamerTest. */
 class RenameContractTest {
     @TempDir
     Path dir;
@@ -51,17 +51,6 @@ class RenameContractTest {
     }
 
     @Test
-    void renamesWithCounterAndDigits() throws Exception {
-        make("a.txt");
-        make("b.txt");
-        make("c.txt");
-        Cmd.Result result = Cmd.run("rename", "-q", "-y", "-N", "img_[C]", "--digits", "3", "--start", "7",
-                glob());
-        assertEquals(0, result.exit(), result.err());
-        assertEquals(List.of("img_007.txt", "img_008.txt", "img_009.txt"), names());
-    }
-
-    @Test
     void aClashChangesNothing() throws Exception {
         make("a.txt");
         make("b.txt");
@@ -86,46 +75,18 @@ class RenameContractTest {
     }
 
     @Test
-    void searchReplaceAndCaseWork() throws Exception {
+    void maskCounterSearchReplaceAndCaseRenameTheFiles() throws Exception {
+        make("a.txt");
+        make("b.txt");
+        make("c.txt");
         make("Hello World.TXT");
-        Cmd.Result result = Cmd.run("rename", "-q", "-y", "-s", " ", "-r", "_", "--case", "lower",
+        Cmd.Result counted = Cmd.run("rename", "-q", "-y", "-N", "img_[C]", "--digits", "3", "--start", "7",
+                dir.resolve("a.txt").toString(), dir.resolve("b.txt").toString(), dir.resolve("c.txt").toString());
+        assertEquals(0, counted.exit(), counted.err());
+        Cmd.Result replaced = Cmd.run("rename", "-q", "-y", "-s", " ", "-r", "_", "--case", "lower",
                 dir.resolve("Hello World.TXT").toString());
-        assertEquals(0, result.exit(), result.err());
-        assertEquals(List.of("hello_world.txt"), names());
-    }
-
-    @Test
-    void aCaseOnlyRenameWorks() throws Exception {
-        make("abc.txt");
-        Cmd.Result result = Cmd.run("rename", "-q", "-y", "--case", "upper", "--case-scope", "name",
-                dir.resolve("abc.txt").toString());
-        assertEquals(0, result.exit(), result.err());
-        assertEquals(List.of("ABC.txt"), names());
-    }
-
-    @Test
-    void theCounterShiftsAChainOfNames() throws Exception {
-        // 1 -> 2, 2 -> 3, 3 -> 4: every target is another item's current name
-        make("1.txt");
-        make("2.txt");
-        make("3.txt");
-        Cmd.Result result = Cmd.run("rename", "-q", "-y", "-N", "[C]", "--start", "2", dir.resolve("1.txt").toString(),
-                dir.resolve("2.txt").toString(), dir.resolve("3.txt").toString());
-        assertEquals(0, result.exit(), result.err());
-        assertEquals(List.of("2.txt", "3.txt", "4.txt"), names());
-        assertEquals("1.txt", Files.readString(dir.resolve("2.txt")), "contents moved with the names");
-        assertEquals("3.txt", Files.readString(dir.resolve("4.txt")));
-    }
-
-    @Test
-    void twoNamesCanBeSwapped() throws Exception {
-        make("1.txt");
-        make("2.txt");
-        Cmd.Result result = Cmd.run("rename", "-q", "-y", "-N", "[C]", "--start", "2", "--step", "-1",
-                dir.resolve("1.txt").toString(), dir.resolve("2.txt").toString());
-        assertEquals(0, result.exit(), result.err());
-        assertEquals("1.txt", Files.readString(dir.resolve("2.txt")));
-        assertEquals("2.txt", Files.readString(dir.resolve("1.txt")));
+        assertEquals(0, replaced.exit(), replaced.err());
+        assertEquals(List.of("hello_world.txt", "img_007.txt", "img_008.txt", "img_009.txt"), names());
     }
 
     @Test

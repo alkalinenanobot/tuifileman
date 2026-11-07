@@ -69,6 +69,26 @@ public final class Draw {
     }
 
     /**
+     * The index in {@code s} that display column {@code column} of {@link #expand(String)} belongs to. A column inside
+     * a tab belongs to the tab: the tab's own index, or with {@code after} the index behind it, so a range
+     * {@code [original(s, a, false), original(s, b, true))} never splits a tab.
+     */
+    public static int original(String s, int column, boolean after) {
+        int out = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (out >= column) {
+                return i;
+            }
+            int width = s.charAt(i) == '\t' ? 4 - out % 4 : 1;
+            if (out + width > column) {
+                return after ? i + 1 : i;
+            }
+            out += width;
+        }
+        return s.length();
+    }
+
+    /**
      * Draws {@code text[from, to)} with its first character at column {@code x}, each character in the colour and
      * attributes of {@code styles} (see {@link TextStyle}; null = plain text) on the background {@code bg}.
      */

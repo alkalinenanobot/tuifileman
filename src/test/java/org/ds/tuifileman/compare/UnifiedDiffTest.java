@@ -31,15 +31,11 @@ class UnifiedDiffTest {
     }
 
     @Test
-    void aChangeShowsRemovedBeforeAddedWithContext() throws Exception {
+    void aChangeShowsRemovedBeforeAddedWithContextAndSeveralLinesAreOneRunEach() throws Exception {
         List<String> out = diff(lines("1", "2", "3", "4", "5"), lines("1", "2", "X", "4", "5"), 1);
         assertEquals(List.of("@@ -2,3 +2,3 @@", " 2", "-3", "+X", " 4"), out);
-    }
-
-    @Test
-    void aBlockOfSeveralLinesIsOneRemovedRunThenOneAddedRun() throws Exception {
-        List<String> out = diff(lines("a", "b", "c", "d"), lines("a", "B", "C", "d"), 0);
-        assertEquals(List.of("@@ -2,2 +2,2 @@", "-b", "-c", "+B", "+C"), out);
+        List<String> block = diff(lines("a", "b", "c", "d"), lines("a", "B", "C", "d"), 0);
+        assertEquals(List.of("@@ -2,2 +2,2 @@", "-b", "-c", "+B", "+C"), block);
     }
 
     @Test

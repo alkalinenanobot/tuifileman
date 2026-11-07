@@ -66,6 +66,7 @@ public final class App {
     private int lastClickPanel = -1;
     private final Map<Path, Path> lastDirectory = new HashMap<>();
     private final Bookmarks bookmarks = new Bookmarks();
+    private final LastDirs lastDirs = new LastDirs();
     private final RunHistory runHistory = new RunHistory();
     private int lastClickIndex = -1;
     private long lastClickTime;
@@ -87,12 +88,18 @@ public final class App {
     /** The progress window redraws about 20 times a second; without the pause the UI thread spun at 200+ redraws/s. */
     private static final int PROGRESS_INTERVAL_MS = 50;
 
-    /** Optional start folders for the left and right panel; the current folder otherwise. */
+    /**
+     * Optional start folders for the left and right panel. Without arguments the panels open in the folders they
+     * were in when the program last ran (the current folder for a panel whose folder is gone); with one argument the
+     * right panel shows it too.
+     */
     private App(String[] args) {
         Path home = Path.of(System.getProperty("user.dir"));
+        Path[] last = args.length == 0 ? lastDirs.load() : new Path[2];
         panels = new PanelState[] {
-            new PanelState(args.length > 0 ? Path.of(args[0]) : home),
-            new PanelState(args.length > 1 ? Path.of(args[1]) : args.length > 0 ? Path.of(args[0]) : home)
+            new PanelState(args.length > 0 ? Path.of(args[0]) : last[0] != null ? last[0] : home),
+            new PanelState(args.length > 1 ? Path.of(args[1]) : args.length > 0 ? Path.of(args[0])
+                    : last[1] != null ? last[1] : home)
         };
     }
 
@@ -287,11 +294,26 @@ public final class App {
                     continue;
                 }
                 dispatch(key);
+                rememberDirs();
                 render();
             }
         } finally {
+            rememberDirs();
             Archives.closeAll();
         }
+    }
+
+    /** Saves both panel folders for the next start (a panel inside an archive counts as the folder of the archive). */
+    private void rememberDirs() {
+        lastDirs.save(realDirectory(panels[0]), realDirectory(panels[1]));
+    }
+
+    private static Path realDirectory(PanelState panel) {
+        if (!panel.isVirtual()) {
+            return panel.directory();
+        }
+        Path origin = Archives.origin(panel.directory());
+        return origin == null ? null : origin.getParent();
     }
 
     private void registerCommands() {

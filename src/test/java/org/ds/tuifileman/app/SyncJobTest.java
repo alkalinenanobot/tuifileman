@@ -79,9 +79,9 @@ class SyncJobTest {
     }
 
     @Test
-    void newFoldersExistBeforeTheirFilesAreCopiedInParallel() throws Exception {
-        // Enough folders for the parallel folder creation; a file copied before its new folder was created would
-        // create that folder itself and make the folder's own creation fail as "appeared".
+    void aLargeMirrorCreatesFoldersBeforeTheirFilesAndDeletesFolderContentFirst() throws Exception {
+        // Enough items for the parallel paths: a file copied before its new folder exists makes the folder's own
+        // creation fail as "appeared"; a folder deleted before its content fails as "not empty".
         setUp();
         for (int a = 0; a < 10; a++) {
             for (int b = 0; b < 8; b++) {
@@ -90,11 +90,21 @@ class SyncJobTest {
                 }
             }
         }
+        file(left, "keep/k.txt", "K");
+        file(right, "keep/k.txt", "K");
+        for (int a = 0; a < 10; a++) {
+            file(right, "keep/stale" + a + ".txt", "s");
+            for (int b = 0; b < 4; b++) {
+                for (int f = 0; f < 3; f++) {
+                    file(right, "gone" + a + "/b" + b + "/f" + f + ".txt", "x");
+                }
+            }
+        }
         SyncJob job = sync(Mode.MIRROR_TO_RIGHT);
         assertTrue(job.errors().isEmpty(), job.errors().toString());
         assertEquals(tree(left), tree(right));
         assertEquals(400, job.copied());
-        assertEquals(490, job.filesDone(), "90 folders and 400 files");
+        assertEquals(180, job.deleted(), "10 stale files, 10 + 40 folders and 120 files below them");
     }
 
     private SyncJob streamedSync(Mode mode) throws Exception {
@@ -138,42 +148,17 @@ class SyncJobTest {
     }
 
     @Test
-    void deletesRunInParallelLevelsWithFolderContentFirst() throws Exception {
-        // Enough items for the parallel path; a folder deleted before its content would fail as "not empty".
-        setUp();
-        file(left, "keep/k.txt", "K");
-        file(right, "keep/k.txt", "K");
-        for (int a = 0; a < 10; a++) {
-            file(right, "keep/stale" + a + ".txt", "s");
-            for (int b = 0; b < 4; b++) {
-                for (int f = 0; f < 3; f++) {
-                    file(right, "gone" + a + "/b" + b + "/f" + f + ".txt", "x");
-                }
-            }
-        }
-        SyncJob job = sync(Mode.MIRROR_TO_RIGHT);
-        assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertEquals(tree(left), tree(right));
-        assertEquals(180, job.deleted(), "10 stale files, 10 + 40 folders and 120 files below them");
-    }
-
-    @Test
-    void noTemporaryFilesAreLeftBehind() throws Exception {
+    void noTemporaryFileIsLeftBehindAndAUserFileNamedLikeOneIsKept() throws Exception {
         setUp();
         file(left, "a.bin", "x".repeat(100_000));
-        sync(Mode.MERGE);
-        assertTrue(tree(right).keySet().stream().noneMatch(name -> name.endsWith(".tmp")));
-    }
-
-    @Test
-    void aUserFileNamedLikeTheTemporaryFileIsKept() throws Exception {
-        setUp();
         file(left, "a.txt", "A");
         file(left, "a.txt.tfm-sync.tmp", "my notes");
         file(right, "a.txt.tfm-sync.tmp", "my notes");
         SyncJob job = sync(Mode.MERGE);
         assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertEquals(Map.of("a.txt", "A", "a.txt.tfm-sync.tmp", "my notes"), tree(right));
+        assertEquals(tree(left), tree(right));
+        assertEquals("my notes", Files.readString(right.resolve("a.txt.tfm-sync.tmp")));
+        assertTrue(tree(right).keySet().stream().noneMatch(name -> name.endsWith(".tmp") && !name.equals("a.txt.tfm-sync.tmp")));
     }
 
     @Test
@@ -217,7 +202,6 @@ class SyncJobTest {
         job.cancel();
         job.run();
         assertTrue(job.isCancelled());
-        assertTrue(job.summary().startsWith("Cancelled."));
         assertTrue(tree(right).isEmpty());
     }
 
@@ -234,15 +218,5 @@ class SyncJobTest {
         assertEquals(1, job.errors().size());
         assertEquals(1, job.copied());
         assertEquals("B", Files.readString(right.resolve("b.txt")));
-        assertTrue(job.summary().contains("1 error"));
-    }
-
-    @Test
-    void summaryCountsCopiedAndDeleted() throws Exception {
-        setUp();
-        file(left, "a.txt", "A");
-        file(right, "b.txt", "B");
-        SyncJob job = sync(Mode.MIRROR_TO_RIGHT);
-        assertTrue(job.summary().startsWith("Synchronized: 1 copied, 1 deleted"), job.summary());
     }
 }

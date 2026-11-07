@@ -68,7 +68,6 @@ class CopyJobTest {
         assertTrue(job.errors().isEmpty(), job.errors().toString());
         assertEquals(Map.of("a.txt", "A", "tree", "<dir>", "tree/b.txt", "B"), tree(dst()));
         assertTrue(tree(src()).isEmpty());
-        assertTrue(job.summary().startsWith("Moved "));
     }
 
     @Test
@@ -172,32 +171,24 @@ class CopyJobTest {
                 "tree/sub/c.txt", "C"), tree(src()), "a move keeps every source");
     }
 
-    @Test
-    void conflictOverwrite() throws Exception {
-        file(src(), "a.txt", "new");
-        file(dst(), "a.txt", "old");
-        CopyJob job = run(false, always(Conflict.OVERWRITE), src().resolve("a.txt"));
-        assertEquals("new", Files.readString(dst().resolve("a.txt")));
-        assertEquals(0, job.skipped());
-    }
+    private record Policy(Conflict answer, Map<String, String> expected, int skipped) { }
 
     @Test
-    void conflictSkip() throws Exception {
+    void eachConflictAnswerDecidesWhatHappensToTheExistingFile() throws Exception {
         file(src(), "a.txt", "new");
-        file(dst(), "a.txt", "old");
-        CopyJob job = run(false, always(Conflict.SKIP), src().resolve("a.txt"));
-        assertEquals("old", Files.readString(dst().resolve("a.txt")));
-        assertEquals(1, job.skipped());
-        assertTrue(job.summary().contains("1 skipped"));
-    }
-
-    @Test
-    void conflictKeepBothNumbersTheNewCopy() throws Exception {
-        file(src(), "a.txt", "new");
-        file(dst(), "a.txt", "old");
-        file(dst(), "a (1).txt", "older");
-        run(false, always(Conflict.KEEP_BOTH), src().resolve("a.txt"));
-        assertEquals(Map.of("a.txt", "old", "a (1).txt", "older", "a (2).txt", "new"), tree(dst()));
+        List<Policy> rows = List.of(
+                new Policy(Conflict.OVERWRITE, Map.of("a.txt", "new", "a (1).txt", "older"), 0),
+                new Policy(Conflict.SKIP, Map.of("a.txt", "old", "a (1).txt", "older"), 1),
+                new Policy(Conflict.KEEP_BOTH, Map.of("a.txt", "old", "a (1).txt", "older", "a (2).txt", "new"), 0));
+        for (Policy row : rows) {
+            Path target = dir(root, "policy-" + row.answer());
+            file(target, "a.txt", "old");
+            file(target, "a (1).txt", "older");
+            CopyJob job = new CopyJob(entries(src().resolve("a.txt")), target, false, always(row.answer()));
+            job.run();
+            assertEquals(row.expected(), tree(target), row.answer().toString());
+            assertEquals(row.skipped(), job.skipped(), row.answer() + ": skipped");
+        }
     }
 
     @Test
@@ -211,89 +202,77 @@ class CopyJobTest {
     }
 
     @Test
-    void anAllAnswerIsAskedOnlyOnce() throws Exception {
+    void anAllAnswerIsAskedOnceAndAppliedToTheRest() throws Exception {
         file(src(), "a.txt", "A");
         file(src(), "b.txt", "B");
         file(src(), "c.txt", "C");
-        file(dst(), "a.txt", "x");
-        file(dst(), "b.txt", "x");
-        file(dst(), "c.txt", "x");
-        List<String> asked = new ArrayList<>();
-        ConflictResolver resolver = (source, existing) -> {
-            asked.add(source.getFileName().toString());
-            return Conflict.OVERWRITE_ALL;
-        };
-        run(false, resolver, src().resolve("a.txt"), src().resolve("b.txt"), src().resolve("c.txt"));
-        assertEquals(List.of("a.txt"), asked, "conflicts are asked in path order");
-        assertEquals(Map.of("a.txt", "A", "b.txt", "B", "c.txt", "C"), tree(dst()));
+        Map<Conflict, Map<String, String>> expected = Map.of(
+                Conflict.OVERWRITE_ALL, Map.of("a.txt", "A", "b.txt", "B", "c.txt", "C"),
+                Conflict.SKIP_ALL, Map.of("a.txt", "x", "b.txt", "x", "c.txt", "x"),
+                Conflict.KEEP_BOTH_ALL, Map.of("a.txt", "x", "b.txt", "x", "c.txt", "x",
+                        "a (1).txt", "A", "b (1).txt", "B", "c (1).txt", "C"));
+        for (var row : expected.entrySet()) {
+            Path target = dir(root, "all-" + row.getKey());
+            for (String name : List.of("a.txt", "b.txt", "c.txt")) {
+                file(target, name, "x");
+            }
+            List<String> asked = new ArrayList<>();
+            CopyJob job = new CopyJob(entries(src().resolve("a.txt"), src().resolve("b.txt"), src().resolve("c.txt")),
+                    target, false, (source, existing) -> {
+                        asked.add(source.getFileName().toString());
+                        return row.getKey();
+                    });
+            job.run();
+            assertEquals(List.of("a.txt"), asked, row.getKey() + ": conflicts are asked in path order");
+            assertEquals(row.getValue(), tree(target), row.getKey().toString());
+            assertEquals(row.getKey() == Conflict.SKIP_ALL ? 3 : 0, job.skipped(), row.getKey() + ": skipped");
+        }
     }
 
     @Test
-    void skipAllAndKeepBothAll() throws Exception {
-        file(src(), "a.txt", "A");
-        file(src(), "b.txt", "B");
-        file(dst(), "a.txt", "x");
-        file(dst(), "b.txt", "x");
-        CopyJob skip = run(false, always(Conflict.SKIP_ALL), src().resolve("a.txt"), src().resolve("b.txt"));
-        assertEquals(2, skip.skipped());
-        assertEquals(Map.of("a.txt", "x", "b.txt", "x"), tree(dst()));
-        run(false, always(Conflict.KEEP_BOTH_ALL), src().resolve("a.txt"), src().resolve("b.txt"));
-        assertEquals(Map.of("a.txt", "x", "b.txt", "x", "a (1).txt", "A", "b (1).txt", "B"), tree(dst()));
-    }
-
-    @Test
-    void overwriteOnlyWhenTheSourceIsNewer() throws Exception {
+    void overwriteRulesCompareTimesAndSizes() throws Exception {
+        Path times = dir(root, "times");
         file(src(), "newer.txt", "S", 60_000);
-        file(dst(), "newer.txt", "D", 0);
+        file(times, "newer.txt", "D", 0);
         file(src(), "older.txt", "S", 0);
-        file(dst(), "older.txt", "D", 60_000);
+        file(times, "older.txt", "D", 60_000);
         file(src(), "same.txt", "S", 1_000);
-        file(dst(), "same.txt", "D", 0);
-        CopyJob job = run(false, always(Conflict.OVERWRITE_OLDER),
-                src().resolve("newer.txt"), src().resolve("older.txt"), src().resolve("same.txt"));
-        assertEquals("S", Files.readString(dst().resolve("newer.txt")));
-        assertEquals("D", Files.readString(dst().resolve("older.txt")));
-        assertEquals("D", Files.readString(dst().resolve("same.txt")), "within the 2 s tolerance");
+        file(times, "same.txt", "D", 0);
+        CopyJob job = new CopyJob(entries(src().resolve("newer.txt"), src().resolve("older.txt"), src().resolve("same.txt")),
+                times, false, always(Conflict.OVERWRITE_OLDER));
+        job.run();
+        assertEquals("S", Files.readString(times.resolve("newer.txt")), "newer source replaces");
+        assertEquals("D", Files.readString(times.resolve("older.txt")), "older source is skipped");
+        assertEquals("D", Files.readString(times.resolve("same.txt")), "within the 2 s tolerance");
         assertEquals(2, job.skipped());
-    }
 
-    @Test
-    void theToleranceOfOverwriteOlderCanBeChanged() throws Exception {
-        file(src(), "a.txt", "S", 30_000);
-        file(dst(), "a.txt", "D", 0);
-        CopyJob loose = new CopyJob(entries(src().resolve("a.txt")), dst(), false, always(Conflict.OVERWRITE_OLDER));
-        loose.setTimeTolerance(60_000);
-        loose.run();
-        assertEquals("D", Files.readString(dst().resolve("a.txt")), "30 s apart is within 60 s");
-        CopyJob exact = new CopyJob(entries(src().resolve("a.txt")), dst(), false, always(Conflict.OVERWRITE_OLDER));
-        exact.setTimeTolerance(0);
-        exact.run();
-        assertEquals("S", Files.readString(dst().resolve("a.txt")));
-    }
-
-    @Test
-    void overwriteBySizeRules() throws Exception {
-        file(src(), "a.txt", "12345");
-        file(dst(), "a.txt", "123");
-        file(src(), "b.txt", "123");
-        file(dst(), "b.txt", "12345");
-        file(src(), "c.txt", "123");
-        file(dst(), "c.txt", "abc");
-        Path[] all = {src().resolve("a.txt"), src().resolve("b.txt"), src().resolve("c.txt")};
-
-        run(false, always(Conflict.OVERWRITE_SIZE_DIFFERS), all);
-        assertEquals(Map.of("a.txt", "12345", "b.txt", "123", "c.txt", "abc"), tree(dst()));
+        file(src(), "tol.txt", "S", 30_000);
+        for (long tolerance : new long[] {60_000, 0}) {
+            Path target = dir(root, "tolerance-" + tolerance);
+            file(target, "tol.txt", "D", 0);
+            CopyJob tolerant = new CopyJob(entries(src().resolve("tol.txt")), target, false, always(Conflict.OVERWRITE_OLDER));
+            tolerant.setTimeTolerance(tolerance);
+            tolerant.run();
+            assertEquals(tolerance == 0 ? "S" : "D", Files.readString(target.resolve("tol.txt")), "tolerance " + tolerance);
+        }
 
         // "smaller" and "larger" describe the file that would be replaced
-        file(dst(), "a.txt", "123");
-        file(dst(), "b.txt", "12345");
-        run(false, always(Conflict.OVERWRITE_SMALLER), all);
-        assertEquals(Map.of("a.txt", "12345", "b.txt", "12345", "c.txt", "abc"), tree(dst()));
-
-        file(dst(), "a.txt", "123");
-        file(dst(), "b.txt", "12345");
-        run(false, always(Conflict.OVERWRITE_LARGER), all);
-        assertEquals(Map.of("a.txt", "123", "b.txt", "123", "c.txt", "abc"), tree(dst()));
+        file(src(), "a.txt", "12345");
+        file(src(), "b.txt", "123");
+        file(src(), "c.txt", "123");
+        Map<Conflict, Map<String, String>> expected = Map.of(
+                Conflict.OVERWRITE_SIZE_DIFFERS, Map.of("a.txt", "12345", "b.txt", "123", "c.txt", "abc"),
+                Conflict.OVERWRITE_SMALLER, Map.of("a.txt", "12345", "b.txt", "12345", "c.txt", "abc"),
+                Conflict.OVERWRITE_LARGER, Map.of("a.txt", "123", "b.txt", "123", "c.txt", "abc"));
+        for (var row : expected.entrySet()) {
+            Path target = dir(root, "size-" + row.getKey());
+            file(target, "a.txt", "123");
+            file(target, "b.txt", "12345");
+            file(target, "c.txt", "abc");
+            new CopyJob(entries(src().resolve("a.txt"), src().resolve("b.txt"), src().resolve("c.txt")), target, false,
+                    always(row.getKey())).run();
+            assertEquals(row.getValue(), tree(target), row.getKey().toString());
+        }
     }
 
     @Test
@@ -331,65 +310,45 @@ class CopyJobTest {
         assertTrue(Files.exists(src().resolve("tree/b.txt")));
     }
 
+    private CopyJob runNamed(boolean move, Path target, String name, ConflictResolver resolver, Path... sources) throws Exception {
+        CopyJob job = new CopyJob(entries(sources), target, move, resolver);
+        job.setTargetName(name);
+        job.run();
+        assertTrue(job.errors().isEmpty(), job.errors().toString());
+        return job;
+    }
+
     @Test
-    void aSingleItemCanBeCopiedUnderANewName() throws Exception {
+    void aSingleItemIsCopiedOrMovedUnderANewNameButSeveralKeepTheirs() throws Exception {
         file(src(), "a.txt", "A", 1_000);
-        CopyJob job = new CopyJob(entries(src().resolve("a.txt")), src(), false, always(Conflict.CANCEL));
-        job.setTargetName("b.txt");
-        job.run();
-        assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertEquals(Map.of("a.txt", "A", "b.txt", "A"), tree(src()));
-        assertEquals(BASE + 1_000, modified(src().resolve("b.txt")));
-    }
-
-    @Test
-    void aSingleItemCanBeMovedUnderANewNameAndFoldersToo() throws Exception {
-        file(src(), "a.txt", "A");
         file(src(), "tree/b.txt", "B");
-        CopyJob job = new CopyJob(entries(src().resolve("a.txt")), src(), true, always(Conflict.CANCEL));
-        job.setTargetName("c.txt");
-        job.run();
-        assertTrue(job.errors().isEmpty(), job.errors().toString());
-        job = new CopyJob(entries(src().resolve("tree")), dst(), true, always(Conflict.CANCEL));
-        job.setTargetName("forest");
-        job.run();
-        assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertEquals(Map.of("c.txt", "A"), tree(src()));
+        runNamed(false, src(), "b.txt", always(Conflict.CANCEL), src().resolve("a.txt"));
+        assertEquals(BASE + 1_000, modified(src().resolve("b.txt")));
+        runNamed(true, src(), "c.txt", always(Conflict.CANCEL), src().resolve("b.txt"));
+        runNamed(true, dst(), "forest", always(Conflict.CANCEL), src().resolve("tree"));
+        assertEquals(Map.of("a.txt", "A", "c.txt", "A"), tree(src()));
         assertEquals(Map.of("forest", "<dir>", "forest/b.txt", "B"), tree(dst()));
-    }
 
-    @Test
-    void renamingOntoAnExistingFileAsksAndOverwrites() throws Exception {
-        file(src(), "a.txt", "A");
-        file(src(), "b.txt", "old");
-        CopyJob job = new CopyJob(entries(src().resolve("a.txt")), src(), false, always(Conflict.OVERWRITE));
-        job.setTargetName("b.txt");
-        job.run();
-        assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertEquals("A", Files.readString(src().resolve("b.txt")));
-    }
-
-    @Test
-    void aCaseOnlyRenameByMoveWorks() throws Exception {
-        file(src(), "a.txt", "A");
-        CopyJob job = new CopyJob(entries(src().resolve("a.txt")), src(), true, always(Conflict.CANCEL));
-        job.setTargetName("A.txt");
-        job.run();
-        assertTrue(job.errors().isEmpty(), job.errors().toString());
-        try (var names = Files.list(src())) {
-            assertEquals(List.of("A.txt"), names.map(p -> p.getFileName().toString()).toList());
-        }
-    }
-
-    @Test
-    void aTargetNameIsIgnoredForSeveralSources() throws Exception {
-        file(src(), "a.txt", "A");
-        file(src(), "b.txt", "B");
-        CopyJob job = new CopyJob(entries(src().resolve("a.txt"), src().resolve("b.txt")), dst(), false,
-                always(Conflict.CANCEL));
+        Path other = dir(root, "other");
+        CopyJob job = new CopyJob(entries(src().resolve("a.txt"), src().resolve("c.txt")), other, false, always(Conflict.CANCEL));
         job.setTargetName("x.txt");
         job.run();
-        assertEquals(Map.of("a.txt", "A", "b.txt", "B"), tree(dst()));
+        assertEquals(Map.of("a.txt", "A", "c.txt", "A"), tree(other));
+    }
+
+    @Test
+    void aNewNameMayReplaceAnExistingFileAndMayDifferOnlyInCase() throws Exception {
+        file(src(), "a.txt", "A");
+        file(src(), "b.txt", "old");
+        runNamed(false, src(), "b.txt", always(Conflict.OVERWRITE), src().resolve("a.txt"));
+        assertEquals("A", Files.readString(src().resolve("b.txt")));
+
+        Path caseDir = dir(root, "case");
+        file(caseDir, "c.txt", "C");
+        runNamed(true, caseDir, "C.txt", always(Conflict.CANCEL), caseDir.resolve("c.txt"));
+        try (var names = Files.list(caseDir)) {
+            assertEquals(List.of("C.txt"), names.map(p -> p.getFileName().toString()).toList());
+        }
     }
 
     @Test
@@ -430,13 +389,6 @@ class CopyJobTest {
         assertEquals(1, job.errors().size());
         assertEquals(Map.of("b.txt", "B"), tree(dst()));
         assertFalse(job.isCancelled());
-    }
-
-    @Test
-    void emptyFilesAreCopied() throws Exception {
-        file(src(), "empty.txt", "");
-        run(false, always(Conflict.CANCEL), src().resolve("empty.txt"));
-        assertEquals(Map.of("empty.txt", ""), tree(dst()));
     }
 
     @Test

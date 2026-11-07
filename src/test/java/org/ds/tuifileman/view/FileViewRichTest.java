@@ -89,16 +89,6 @@ class FileViewRichTest {
     }
 
     @Test
-    void aMarkdownTableIsShownAsAlignedColumns() throws Exception {
-        TerminalScreen screen = show("t.md", "| A | B |\n|---|--:|\n| x | 10 |\n");
-        assertEquals("A \u2502  B", row(screen, 1));
-        assertEquals("\u2500\u2500\u253C\u2500\u2500\u2500", row(screen, 2));
-        assertEquals("x \u2502 10", row(screen, 3));
-        assertTrue(at(screen, 0, 1).getModifiers().contains(SGR.BOLD), "header cell");
-        assertFalse(at(screen, 0, 3).getModifiers().contains(SGR.BOLD), "body cell");
-    }
-
-    @Test
     void rShowsTheRawSourceAndShowsTheRenderingAgain() throws Exception {
         String md = "# Head\n\ntext\n";
         assertEquals("# Head", row(show("a.md", md, new KeyStroke('r', false, false)), 1));

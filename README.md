@@ -55,9 +55,9 @@ licences and this README.
 Then:
 
 ```powershell
-tuifileman                                   # file manager in the current folder
+tuifileman                                   # file manager; both panels open where they were last time
 tuifileman D:\src D:\backup                  # optional start folders: tuifileman [left [right]]
-java -jar target\tuifileman-0.7.1.jar        # the same from the jar
+java -jar target\tuifileman-0.8.0.jar        # the same from the jar
 tuifileman diff D:\a D:\b                    # command line mode, see below
 ```
 
@@ -163,11 +163,13 @@ coloured.
 | `R` | HTML and Markdown files: switch between the rendered text and the raw source |
 | `Space` | Page down |
 | `L` | Line numbers (on by default, `viewer.line_numbers`) |
-| `W` | Wrap long lines (on by default, `viewer.wrap`): breaks after the last space that fits, hard at the window width otherwise; with wrap off `Left`/`Right` pan |
+| `W` | Wrap long lines (on by default, `viewer.wrap`): breaks after the last space that fits, hard at the window width otherwise; continuation rows line up under the text of an indented or list line (`- `, `*`, `•`, `1.`); with wrap off `Left`/`Right` pan |
+| mouse drag | Select text (text view): the line numbers and the indent of wrapped rows are not selected, wrapped rows join without a line break, and releasing the button copies the selection to the system clipboard. Dragging above or below the text scrolls; the wheel scrolls too |
+| `c`, `Ctrl+C` | Copy the selection again |
 | `F7`, `/` | Find (`0x..` searches bytes) |
 | `F3`, `n` / `p` | Next / previous match |
 | `g` | Go to a line (text view: `1234`, `l1234` or `line 1234`) or an offset (`:1234`, `0xHEX`, `NN%`; in the hex view a plain number is an offset). A far line in a huge file is counted by reading it (about 1 GB per second when cached); `Esc` cancels. Past the end it shows the last line |
-| `Esc`, `q` | Close |
+| `Esc`, `q` | Clear a selection, else close |
 
 Previews use external tools; their commands are settings ([CONFIG.md](CONFIG.md)):
 
@@ -458,9 +460,9 @@ Needs a JDK 17+ and Maven. The console backend is JNA with the Win32 API on Wind
 terminal on Linux.
 
 ```powershell
-mvn package                                  # fat jar: target\tuifileman-0.7.1.jar (runs the JUnit tests first)
+mvn package                                  # fat jar: target\tuifileman-0.8.0.jar (runs the JUnit tests first)
 mvn test                                     # tests only
-java -jar target\tuifileman-0.7.1.jar
+java -jar target\tuifileman-0.8.0.jar
 .\native\native.ps1 -Build                   # GraalVM native exe from the fat jar: target\dist\tuifileman.exe (single file)
 .\native\package.ps1                         # release zip + SHA-256 in target\release
 ```

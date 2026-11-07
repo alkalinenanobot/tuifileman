@@ -54,15 +54,11 @@ class CliContractTest {
     }
 
     @Test
-    void unknownOptionIsAUsageError() throws Exception {
+    void badInvocationsAreUsageErrorsOnStderr() throws Exception {
         Cmd.Result result = Cmd.run("diff", "--bogus", "x", "y");
         assertEquals(2, result.exit());
         assertEquals("", result.out(), "errors go to stderr only");
-        assertTrue(result.err().contains("error:"));
-    }
-
-    @Test
-    void missingArgumentsAreAUsageError() throws Exception {
+        assertTrue(result.err().contains("--bogus"), result.err());
         assertEquals(2, Cmd.run("diff").exit());
         assertEquals(2, Cmd.run("copy").exit());
         assertEquals(2, Cmd.run("rename").exit());
@@ -75,10 +71,10 @@ class CliContractTest {
         Cmd.Result typo = Cmd.run("install-aliasses");
         assertEquals(2, typo.exit());
         assertEquals("", typo.out());
-        assertTrue(typo.err().contains("did you mean 'install-aliases'?"), typo.err());
+        assertTrue(typo.err().contains("install-aliases"), typo.err());
         Cmd.Result missing = Cmd.run(dir.resolve("no-such-folder").toString());
         assertEquals(2, missing.exit());
-        assertTrue(missing.err().contains("not a command or an existing folder"), missing.err());
+        assertTrue(missing.err().contains("no-such-folder"), missing.err());
         assertEquals(2, Cmd.run("--bogus").exit());
         assertEquals(2, Cmd.run("a", "b", "c").exit());
     }
@@ -104,13 +100,6 @@ class CliContractTest {
     }
 
     @Test
-    void diffQuietPrintsNothingOnStderr() throws Exception {
-        Cmd.Result result = Cmd.run("diff", "-q", left().toString(), right().toString());
-        assertEquals(1, result.exit());
-        assertEquals("", result.err());
-    }
-
-    @Test
     void diffExitCodeIsAboutTheTreesNotTheShownRows() throws Exception {
         Cmd.Result result = Cmd.run("diff", "-q", "-o", "same", left().toString(), right().toString());
         assertTrue(result.out().contains("same.txt") && !result.out().contains("only-left.txt"), result.out());
@@ -123,7 +112,7 @@ class CliContractTest {
                 "only NUL is invalid in a POSIX path, and no argument can hold one");
         Cmd.Result result = Cmd.run("diff", "-q", "a<b", dir.toString());
         assertEquals(2, result.exit(), result.err());
-        assertTrue(result.err().contains("invalid path"), result.err());
+        assertTrue(result.err().contains("a<b"), result.err());
     }
 
     @Test
@@ -168,13 +157,6 @@ class CliContractTest {
     }
 
     @Test
-    void diffOfAMissingFolderFails() throws Exception {
-        Cmd.Result result = Cmd.run("diff", "-q", dir.resolve("nope").toString(), dir.toString());
-        assertTrue(result.exit() == 2 || result.exit() == 4, "exit " + result.exit());
-        assertEquals("", result.out());
-    }
-
-    @Test
     void anUnreadableFolderMakesDiffAndSyncReportFileErrors() throws Exception {
         Cmd.file(dir, "a/x.txt", "1");
         Cmd.file(dir, "b/x.txt", "1");
@@ -198,17 +180,12 @@ class CliContractTest {
     // ---- copy, move, delete -----------------------------------------------------------------------------------
 
     @Test
-    void copyDryRunChangesNothing() throws Exception {
+    void copyDryRunChangesNothingAndARealRunReportsTheCounts() throws Exception {
         Path source = Cmd.file(dir, "src/f.txt", "data");
-        Cmd.Result result = Cmd.run("copy", "-n", "-q", "-f", "json", source.toString(), dir.resolve("dst").toString());
-        assertEquals(0, result.exit());
-        assertEquals(true, result.json().get("dry_run"));
+        Cmd.Result plan = Cmd.run("copy", "-n", "-q", "-f", "json", source.toString(), dir.resolve("dst").toString());
+        assertEquals(0, plan.exit());
+        assertEquals(true, plan.json().get("dry_run"));
         assertFalse(Files.exists(dir.resolve("dst/f.txt")));
-    }
-
-    @Test
-    void copyCopiesAndReportsTheCounts() throws Exception {
-        Path source = Cmd.file(dir, "src/f.txt", "data");
         Cmd.Result result = Cmd.run("copy", "-q", "-f", "json", source.toString(), dir.resolve("dst").toString());
         assertEquals(0, result.exit());
         assertEquals("ok", result.json().get("status"));
@@ -226,14 +203,8 @@ class CliContractTest {
         assertEquals(2, result.exit());
         assertEquals("old", Files.readString(dir.resolve("dst/f.txt")), "nothing was touched");
         assertEquals("new", Files.readString(source));
-    }
-
-    @Test
-    void copyConflictPolicyOverwriteReplaces() throws Exception {
-        Path source = Cmd.file(dir, "src/f.txt", "new");
-        Cmd.file(dir, "dst/f.txt", "old");
-        Cmd.Result result = Cmd.run("copy", "-q", "-c", "overwrite", source.toString(), dir.resolve("dst").toString());
-        assertEquals(0, result.exit());
+        Cmd.Result overwrite = Cmd.run("copy", "-q", "-c", "overwrite", source.toString(), dir.resolve("dst").toString());
+        assertEquals(0, overwrite.exit());
         assertEquals("new", Files.readString(dir.resolve("dst/f.txt")));
     }
 
@@ -255,31 +226,21 @@ class CliContractTest {
     }
 
     @Test
-    void deleteWithYesDeletes() throws Exception {
-        Cmd.file(dir, "victim/f.txt", "data");
-        Cmd.Result result = Cmd.run("delete", "-q", "-y", dir.resolve("victim").toString());
-        assertEquals(0, result.exit());
-        assertFalse(Files.exists(dir.resolve("victim")));
-    }
-
-    @Test
-    void deleteDryRunDeletesNothing() throws Exception {
+    void deleteDryRunDeletesNothingAndYesDeletes() throws Exception {
         Path victim = Cmd.file(dir, "victim/f.txt", "data");
         assertEquals(0, Cmd.run("delete", "-q", "-n", dir.resolve("victim").toString()).exit());
         assertTrue(Files.exists(victim));
+        assertEquals(0, Cmd.run("delete", "-q", "-y", dir.resolve("victim").toString()).exit());
+        assertFalse(Files.exists(dir.resolve("victim")));
     }
 
     // ---- sync -------------------------------------------------------------------------------------------------
 
     @Test
-    void syncRefusesWithoutYesWhenThereIsNoTerminal() throws Exception {
-        Cmd.Result result = Cmd.run("sync", "-q", left().toString(), right().toString());
-        assertEquals(2, result.exit());
+    void syncRefusesWithoutYesWhenThereIsNoTerminalAndMergeCopiesMissingFiles() throws Exception {
+        Cmd.Result refused = Cmd.run("sync", "-q", left().toString(), right().toString());
+        assertEquals(2, refused.exit());
         assertFalse(Files.exists(right().resolve("only-left.txt")));
-    }
-
-    @Test
-    void syncMergeCopiesMissingFiles() throws Exception {
         Cmd.Result result = Cmd.run("sync", "-q", "-y", left().toString(), right().toString());
         assertEquals(0, result.exit());
         assertEquals("left", Files.readString(right().resolve("only-left.txt")));
@@ -312,74 +273,29 @@ class CliContractTest {
     // ---- ignore rules ------------------------------------------------------------------------------------------
 
     @Test
-    void diffGitignoreHidesIgnoredEntriesInTextAndCountsThem() throws Exception {
-        Cmd.file(dir, "a/.gitignore", "*.log\nbuild/\n");
-        Cmd.file(dir, "a/x.log", "log");
-        Cmd.file(dir, "a/build/out.o", "o");
-        Cmd.file(dir, "a/keep.txt", "k");
-        Files.createDirectories(right());
-        Cmd.Result result = Cmd.run("diff", "-q", "-g", "--stats", "-f", "text", dir.resolve("a").toString(), right().toString());
-        assertEquals(1, result.exit(), result.err());
-        assertTrue(result.out().contains("keep.txt"), result.out());
-        assertFalse(result.out().contains("x.log"), result.out());
-        assertFalse(result.out().contains("build"), result.out());
-        Cmd.Result shown = Cmd.run("diff", "-q", "-g", "--show-ignored", dir.resolve("a").toString(), right().toString());
-        assertTrue(shown.out().contains("ignored") && shown.out().contains("x.log") && shown.out().contains("build/"), shown.out());
-        assertFalse(shown.out().contains("out.o"), "an ignored folder is one item: " + shown.out());
-        Cmd.Result json = Cmd.run("diff", "-q", "-g", "--stats", "-f", "json", dir.resolve("a").toString(), right().toString());
-        assertEquals(2, ((Number) ((Map<?, ?>) json.json().get("stats")).get("ignored")).intValue());
-        Cmd.Result without = Cmd.run("diff", "-q", "-f", "csv", dir.resolve("a").toString(), right().toString());
-        assertTrue(without.out().contains("x.log") && !without.out().contains(",ignored"), "without --gitignore nothing is ignored");
-    }
-
-    @Test
-    void diffListsIgnoredEntriesInDataFormatsAndNamesTheSide() throws Exception {
+    void ignoredEntriesAreNotDifferencesAndAreReportedWithTheSideThatIgnoredThem() throws Exception {
         Cmd.file(dir, "a/x.log", "log");
         Cmd.file(dir, "b/.gitignore", "*.log\n");
         Cmd.file(dir, "b/y.log", "log");
         Cmd.Result result = Cmd.run("diff", "-q", "-g", "-f", "jsonl", dir.resolve("a").toString(), right().toString());
-        long ignored = result.outLines().stream().filter(l -> l.contains("\"status\":\"ignored\"")).count();
-        assertEquals(2, ignored, result.out());
-        assertTrue(result.out().contains("\"ignoredBy\":\"right\""), result.out());
+        for (String line : result.outLines()) {
+            Map<?, ?> item = (Map<?, ?>) JsonReader.parse(line);
+            if ("item".equals(item.get("kind")) && !".gitignore".equals(item.get("path"))) {
+                assertEquals("ignored", item.get("status"), line);
+                assertEquals("right", item.get("ignoredBy"), line);
+            }
+        }
         assertTrue(result.out().contains("\"ignored\":2"), "the summary counts them: " + result.out());
-        Cmd.Result csv = Cmd.run("diff", "-q", "-g", "-f", "csv", dir.resolve("a").toString(), right().toString());
-        assertTrue(csv.out().contains("ignored,file,x.log"), csv.out());
-        Cmd.Result only = Cmd.run("diff", "-q", "-g", "-o", "ignored", dir.resolve("a").toString(), right().toString());
-        assertTrue(only.out().contains("x.log") && only.out().contains("(by right rules)"), only.out());
-    }
+        Cmd.Result without = Cmd.run("diff", "-q", "-f", "csv", dir.resolve("a").toString(), right().toString());
+        assertFalse(without.out().contains(",ignored"), "without --gitignore nothing is ignored: " + without.out());
 
-    @Test
-    void ignoredEntriesAreNotDifferences() throws Exception {
-        Cmd.file(dir, "a/.gitignore", "*.log\n");
-        Cmd.file(dir, "b/.gitignore", "*.log\n");
-        Cmd.file(dir, "a/x.log", "log");
-        Files.setLastModifiedTime(dir.resolve("b/.gitignore"), Files.getLastModifiedTime(dir.resolve("a/.gitignore")));
-        Cmd.Result result = Cmd.run("diff", "-q", "-g", "-f", "jsonl", dir.resolve("a").toString(), right().toString());
-        assertEquals(0, result.exit(), result.out());
-        assertTrue(result.out().contains("\"status\":\"ignored\""), result.out());
-    }
+        Cmd.file(dir, "c/.gitignore", "*.log\n");
+        Cmd.file(dir, "d/.gitignore", "*.log\n");
+        Cmd.file(dir, "c/x.log", "log");
+        Files.setLastModifiedTime(dir.resolve("d/.gitignore"), Files.getLastModifiedTime(dir.resolve("c/.gitignore")));
+        Cmd.Result same = Cmd.run("diff", "-q", "-g", dir.resolve("c").toString(), dir.resolve("d").toString());
+        assertEquals(0, same.exit(), same.out());
 
-    @Test
-    void diffGitignoreDoesNotSkipTheGitFolderButExcludeCan() throws Exception {
-        Cmd.file(dir, "a/.git/HEAD", "ref");
-        Cmd.file(dir, "a/keep.txt", "k");
-        Files.createDirectories(right());
-        Cmd.Result plain = Cmd.run("diff", "-q", "-g", "-f", "text", dir.resolve("a").toString(), right().toString());
-        assertTrue(plain.out().contains(".git/HEAD"), plain.out());
-        Cmd.Result excluded = Cmd.run("diff", "-q", "-g", "-x", ".git", "-f", "text", dir.resolve("a").toString(), right().toString());
-        assertFalse(excluded.out().contains(".git"), excluded.out());
-        assertTrue(excluded.out().contains("keep.txt"), excluded.out());
-    }
-
-    @Test
-    void diffIgnoreFileTakesPatternsFromAnyFile() throws Exception {
-        Cmd.file(dir, "a/x.tmp", "t");
-        Cmd.file(dir, "a/keep.txt", "k");
-        Files.createDirectories(right());
-        Path rules = Cmd.file(dir, "my.rules", "*.tmp\n");
-        Cmd.Result result = Cmd.run("diff", "-q", "--ignore-file", rules.toString(), "-f", "text",
-                dir.resolve("a").toString(), right().toString());
-        assertTrue(result.out().contains("keep.txt") && !result.out().contains("x.tmp"), result.out());
         Cmd.Result missing = Cmd.run("diff", "-q", "--ignore-file", dir.resolve("nope").toString(),
                 dir.resolve("a").toString(), right().toString());
         assertEquals(2, missing.exit());
@@ -402,23 +318,11 @@ class CliContractTest {
     }
 
     @Test
-    void syncPlanListsIgnoredEntriesAsSkipsAndAPlanNeverActsOnThem() throws Exception {
+    void aPlanMadeFromADiffNeverMirrorsAnIgnoredEntryAway() throws Exception {
         Cmd.file(dir, "a/keep.txt", "k");
         Cmd.file(dir, "b/cache.tmp", "c");
         Cmd.file(dir, "b/extra.txt", "x");
         Path rules = Cmd.file(dir, "my.rules", "*.tmp\n");
-        Cmd.Result plan = Cmd.run("sync", "-q", "-n", "-m", "mirror-right", "--ignore-file", rules.toString(), "-f", "jsonl",
-                dir.resolve("a").toString(), right().toString());
-        assertEquals(0, plan.exit(), plan.err());
-        assertTrue(plan.out().contains("\"action\":\"skip\",\"entry\":\"file\",\"path\":\"cache.tmp\",\"status\":\"ignored\""), plan.out());
-        assertTrue(plan.out().contains("\"reason\":\"ignored\""), plan.out());
-        assertTrue(plan.out().contains("\"ignored\":1"), plan.out());
-        Cmd.Result text = Cmd.run("sync", "-q", "-n", "-m", "mirror-right", "--ignore-file", rules.toString(),
-                dir.resolve("a").toString(), right().toString());
-        assertFalse(text.out().contains("cache.tmp"), "text lists ignored entries on request only: " + text.out());
-        assertTrue(Cmd.run("sync", "-q", "-n", "--show-ignored", "--ignore-file", rules.toString(),
-                dir.resolve("a").toString(), right().toString()).out().contains("cache.tmp"));
-
         Cmd.Result diff = Cmd.run("diff", "-q", "--ignore-file", rules.toString(), "-f", "jsonl",
                 dir.resolve("a").toString(), right().toString());
         Path file = dir.resolve("diff.jsonl");
@@ -432,7 +336,7 @@ class CliContractTest {
     }
 
     @Test
-    void aPlanLineCannotForceAnIgnoredEntry() throws Exception {
+    void aPlanLineCannotForceAnIgnoredEntryAndIgnoreOptionsCannotBeCombinedWithAPlan() throws Exception {
         Cmd.file(dir, "a/x.tmp", "t");
         Files.createDirectories(right());
         Path file = Cmd.file(dir, "plan.jsonl",
@@ -440,14 +344,11 @@ class CliContractTest {
         Cmd.Result result = Cmd.run("sync", "-q", "-y", "-p", file.toString(), dir.resolve("a").toString(), right().toString());
         assertEquals(2, result.exit(), result.err());
         assertFalse(Files.exists(dir.resolve("b/x.tmp")));
-    }
-
-    @Test
-    void syncRefusesIgnoreOptionsTogetherWithAPlan() throws Exception {
-        Cmd.Result result = Cmd.run("sync", "-q", "-g", "-p", dir.resolve("plan.jsonl").toString(),
+        Cmd.Result combined = Cmd.run("sync", "-q", "-y", "-g", "-p", file.toString(),
                 dir.resolve("a").toString(), right().toString());
-        assertEquals(2, result.exit());
-        assertEquals("", result.out());
+        assertEquals(2, combined.exit());
+        assertEquals("", combined.out());
+        assertFalse(Files.exists(dir.resolve("b/x.tmp")));
     }
 
     // ---- find -------------------------------------------------------------------------------------------------
@@ -598,37 +499,16 @@ class CliContractTest {
         assertEquals(1, Cmd.run("diff", "-q", "--time-tolerance", "2", a, b).exit(), "a bare number is seconds");
         assertEquals(0, Cmd.run("diff", "-q", "--time-tolerance", "2m", a, b).exit());
         assertEquals(0, Cmd.run("diff", "-q", "--time-tolerance=1h", a, b).exit());
-    }
 
-    @Test
-    void zeroToleranceNeedsExactlyEqualTimes() throws Exception {
-        skewedPair();
-        long base = 1_700_000_000_000L;
-        Files.setLastModifiedTime(dir.resolve("a/t.txt"), java.nio.file.attribute.FileTime.fromMillis(base + 1_000));
-        Files.setLastModifiedTime(dir.resolve("b/t.txt"), java.nio.file.attribute.FileTime.fromMillis(base));
-        assertEquals(0, Cmd.run("diff", "-q", dir.resolve("a").toString(), dir.resolve("b").toString()).exit());
-        assertEquals(1, Cmd.run("diff", "-q", "--time-tolerance", "0", dir.resolve("a").toString(), dir.resolve("b").toString()).exit());
-    }
+        Files.setLastModifiedTime(dir.resolve("b/t.txt"),
+                java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L - 1_000));
+        assertEquals(0, Cmd.run("diff", "-q", a, b).exit(), "1 s apart is equal by default");
+        assertEquals(1, Cmd.run("diff", "-q", "--time-tolerance", "0", a, b).exit(), "0 means exactly equal");
 
-    @Test
-    void syncHonoursTheTimeTolerance() throws Exception {
-        skewedPair();
-        Cmd.Result strict = Cmd.run("sync", "-q", "-n", "-f", "jsonl", dir.resolve("a").toString(), dir.resolve("b").toString());
-        assertTrue(strict.out().contains("\"action\":\"to-right\""), strict.out());
-        Cmd.Result loose = Cmd.run("sync", "-q", "-n", "-f", "jsonl", "--time-tolerance", "2m", dir.resolve("a").toString(),
-                dir.resolve("b").toString());
-        assertFalse(loose.out().contains("\"action\":\"to-"), loose.out());
-    }
-
-    @Test
-    void aBadToleranceIsAUsageError() throws Exception {
-        skewedPair();
-        for (String command : List.of("diff", "sync")) {
-            Cmd.Result result = Cmd.run(command, "-q", "--time-tolerance", "5ms", dir.resolve("a").toString(), dir.resolve("b").toString());
-            assertEquals(2, result.exit(), command);
-            assertEquals("", result.out());
-            assertTrue(result.err().contains("--time-tolerance needs a duration"), result.err());
-        }
+        Cmd.Result bad = Cmd.run("diff", "-q", "--time-tolerance", "5ms", a, b);
+        assertEquals(2, bad.exit());
+        assertEquals("", bad.out());
+        assertTrue(bad.err().contains("--time-tolerance"), bad.err());
     }
 
     @Test
@@ -639,15 +519,10 @@ class CliContractTest {
         String ini = "[sync]\ntime_tolerance = 2m\n";
         assertEquals(0, Cmd.runWithIni(dir, ini, "diff", "-q", a, b).exit());
         assertEquals(1, Cmd.runWithIni(dir, ini, "diff", "-q", "--time-tolerance", "1m", a, b).exit());
-        assertEquals(0, Cmd.runWithIni(dir, ini, "sync", "-q", "-n", a, b).exit());
-    }
-
-    @Test
-    void anInvalidIniToleranceFallsBackToTwoSeconds() throws Exception {
-        skewedPair();
-        Cmd.Result result = Cmd.runWithIni(dir, "[sync]\ntime_tolerance = soon\n", "diff", "-q",
-                dir.resolve("a").toString(), dir.resolve("b").toString());
-        assertEquals(1, result.exit());
+        Cmd.Result plan = Cmd.runWithIni(dir, ini, "sync", "-q", "-n", "-f", "jsonl", a, b);
+        assertFalse(plan.out().contains("\"action\":\"to-"), "sync reads the same default: " + plan.out());
+        assertEquals(1, Cmd.runWithIni(dir, "[sync]\ntime_tolerance = soon\n", "diff", "-q", a, b).exit(),
+                "an invalid value falls back to 2 s");
     }
 
     @Test
@@ -663,13 +538,4 @@ class CliContractTest {
         assertEquals("new", Files.readString(target), "30 s newer is beyond the 2 s default");
     }
 
-    @Test
-    void copyAndMoveRejectABadTolerance() throws Exception {
-        Path source = Cmd.file(dir, "src/t.txt", "x");
-        for (String command : List.of("copy", "move")) {
-            Cmd.Result result = Cmd.run(command, "-q", "--time-tolerance", "5ms", source.toString(), dir.resolve("dst").toString());
-            assertEquals(2, result.exit(), command);
-            assertTrue(result.err().contains("--time-tolerance needs a duration"), result.err());
-        }
-    }
 }

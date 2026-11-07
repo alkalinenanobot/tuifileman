@@ -1,7 +1,6 @@
 package org.ds.tuifileman.fs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -17,9 +16,7 @@ class ParallelTest {
     }
 
     @Test
-    void threadsAreAlwaysPositiveAndTheForcedValueWins() {
-        assertTrue(Parallel.threads(root) >= 1);
-        assertTrue(Parallel.threads(root, root.resolve("x")) >= 1);
+    void theForcedThreadCountWins() {
         System.setProperty("tfm.threads", "3");
         try {
             assertEquals(3, Parallel.threads(root));

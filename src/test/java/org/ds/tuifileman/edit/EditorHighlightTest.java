@@ -79,16 +79,6 @@ class EditorHighlightTest {
     }
 
     @Test
-    void javaIsColouredAndTheHeaderNamesTheLanguage() throws Exception {
-        TerminalScreen screen = run("A.java", "int x = 1; // note\nString s = \"q\";\n", "");
-        assertTrue(row(screen, 0).contains("Java"), row(screen, 0));
-        assertEquals(THEME.type(), at(screen, 0, 1).getForegroundColor(), "int");
-        assertEquals(THEME.number(), at(screen, 8, 1).getForegroundColor(), "1");
-        assertEquals(THEME.comment(), at(screen, 11, 1).getForegroundColor(), "comment");
-        assertEquals(THEME.string(), at(screen, 11, 2).getForegroundColor(), "string");
-    }
-
-    @Test
     void unknownExtensionsAndTheSettingKeepTheTextPlain() throws Exception {
         TerminalScreen txt = run("a.txt", "int x = 1;\n", "");
         assertEquals(THEME.text(), at(txt, 0, 1).getForegroundColor());

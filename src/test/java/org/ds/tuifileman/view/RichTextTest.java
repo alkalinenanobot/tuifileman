@@ -59,22 +59,15 @@ class RichTextTest {
     }
 
     @Test
-    void htmlTitleIsShownWhenNoHeadingRepeatsIt() throws IOException {
-        assertEquals("Page\n====\n\nbody text\n", html("<title>Page</title><div>body   text</div>").text());
-    }
-
-    @Test
-    void htmlOrderedListsContinueFromTheStartAttribute() throws IOException {
+    void htmlTitleOrderedListStartAndEmptyDocuments() throws IOException {
+        assertEquals("Page\n====\n\nbody text\n", html("<title>Page</title><div>body   text</div>").text(),
+                "the title is shown when no heading repeats it");
         assertEquals("3. x\n4. y\n", html("<ol start=\"3\"><li>x</li><li>y</li></ol>").text());
-    }
-
-    @Test
-    void htmlWithoutTextIsEmpty() throws IOException {
         assertTrue(html("<html><head><script>x()</script></head><body> </body></html>").isEmpty());
     }
 
     @Test
-    void htmlTableIsAlignedWithABoldHeaderAndARule() throws IOException {
+    void htmlTablesAreAlignedWithABoldHeaderARuleAndColspan() throws IOException {
         String table = "<table><thead><tr><th>Name</th><th align=\"right\">Qty</th></tr></thead>"
                 + "<tbody><tr><td>apple</td><td align=\"right\">3</td></tr>"
                 + "<tr><td><s>kiwi</s> fruit</td><td>12</td></tr></tbody></table><p>after</p>";
@@ -91,13 +84,9 @@ class RichTextTest {
         assertTrue(has(style(r, "kiwi"), TextStyle.STRIKE));
         assertTrue(!has(style(r, "fruit"), TextStyle.STRIKE));
         assertEquals(TextStyle.MUTED, role(r.styles()[r.text().indexOf('\u2502')]));
-    }
-
-    @Test
-    void htmlTableWithoutHeaderCellsHasNoRuleAndColspanPads() throws IOException {
         assertEquals("a    \u2502 b \u2502 c\nlong\n",
                 html("<table><tr><td>a</td><td>b</td><td>c</td></tr><tr><td colspan=\"3\">long</td></tr></table>")
-                        .text());
+                        .text(), "without header cells there is no rule, and colspan pads");
     }
 
     @Test
@@ -119,7 +108,7 @@ class RichTextTest {
     }
 
     @Test
-    void markdownStructure() {
+    void markdownStructureHeadingLevelsAndEntities() {
         String md = "# Title\n\nSome *text* with `code` and [link](http://a.b).\n\n- one\n- two\n  1. x\n  2. y\n\n"
                 + "> quote\n\n```\ncode line\n```\n";
         assertEquals("""
@@ -137,10 +126,6 @@ class RichTextTest {
 
                     code line
                 """, RichText.markdown(md).text());
-    }
-
-    @Test
-    void markdownHeadingLevelsAndEntities() {
         assertEquals("Sub\n---\n\n### Third\n\nA & B \u00e9\n",
                 RichText.markdown("## Sub\n\n### Third\n\nA &amp; B &eacute;\n").text());
     }

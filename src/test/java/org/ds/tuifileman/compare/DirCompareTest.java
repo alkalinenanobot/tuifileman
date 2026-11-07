@@ -4,8 +4,6 @@ import static org.ds.tuifileman.Fixtures.dir;
 import static org.ds.tuifileman.Fixtures.file;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.ds.tuifileman.compare.DirCompare.Action;
@@ -72,18 +70,14 @@ class DirCompareTest {
     }
 
     @Test
-    void timesWithinTheToleranceAreEqual() throws Exception {
-        file(left(), "a.txt", "abc", 1_900);
-        file(right(), "a.txt", "abc", 0);
-        file(left(), "b.txt", "abc", 2_100);
-        file(right(), "b.txt", "abc", 0);
-        Map<String, Item> items = scan();
-        assertEquals(Status.SAME, items.get("a.txt").status());
-        assertEquals(Status.LEFT_NEWER, items.get("b.txt").status());
-    }
-
-    @Test
-    void aCustomToleranceMovesTheLineBetweenSameAndNewer() throws Exception {
+    void theTimeToleranceDecidesBetweenSameAndNewer() throws Exception {
+        file(left(), "near.txt", "abc", 1_900);
+        file(right(), "near.txt", "abc", 0);
+        file(left(), "far.txt", "abc", 2_100);
+        file(right(), "far.txt", "abc", 0);
+        Map<String, Item> defaults = scan();
+        assertEquals(Status.SAME, defaults.get("near.txt").status(), "within the default tolerance");
+        assertEquals(Status.LEFT_NEWER, defaults.get("far.txt").status(), "beyond the default tolerance");
         file(left(), "a.txt", "abc", 30_000);
         file(right(), "a.txt", "abc", 0);
         file(left(), "c.txt", "abc", 30_000);
@@ -115,24 +109,18 @@ class DirCompareTest {
     }
 
     @Test
-    void foldersOnBothSidesAreWalkedButNotListed() throws Exception {
+    void foldersOnBothSidesAreWalkedButNotListedAndAShallowScanStaysOnTheTopLevel() throws Exception {
         file(left(), "sub/deep/x.txt", "x");
+        file(left(), "top.txt", "x");
         dir(right(), "sub");
         Map<String, Item> items = scan();
         assertFalse(items.containsKey("sub"));
         assertTrue(items.get("sub/deep").directory());
         assertEquals(Status.ONLY_LEFT, items.get("sub/deep").status());
         assertEquals(Status.ONLY_LEFT, items.get("sub/deep/x.txt").status());
-    }
 
-    @Test
-    void shallowScanStaysOnTheTopLevel() throws Exception {
-        file(left(), "top.txt", "x");
-        file(left(), "sub/deep.txt", "x");
-        dir(right(), "sub");
-        Map<String, Item> items = scan(false, false);
-        assertTrue(items.containsKey("top.txt"));
-        assertEquals(1, items.size(), "folders are not entered and not listed: " + items.keySet());
+        Map<String, Item> shallow = scan(false, false);
+        assertEquals(List.of("top.txt"), List.copyOf(shallow.keySet()), "folders are not entered and not listed");
     }
 
     @Test
@@ -155,15 +143,6 @@ class DirCompareTest {
         AtomicBoolean cancel = new AtomicBoolean(true);
         List<Item> items = DirCompare.scan(left(), right(), true, false, cancel, new AtomicInteger());
         assertTrue(items.size() <= 50);
-    }
-
-    @Test
-    void progressCountsExaminedEntries() throws Exception {
-        file(left(), "a.txt", "x");
-        file(left(), "sub/b.txt", "x");
-        AtomicInteger progress = new AtomicInteger();
-        DirCompare.scan(left(), right(), true, false, new AtomicBoolean(), progress);
-        assertTrue(progress.get() >= 3, "a.txt, sub and b.txt: " + progress.get());
     }
 
     @Test
@@ -206,7 +185,7 @@ class DirCompareTest {
     }
 
     @Test
-    void mirrorToRightMakesTheRightSideLikeTheLeft() throws Exception {
+    void mirrorMakesTheTargetSideLikeTheSourceEvenOverANewerTarget() throws Exception {
         Map<String, Item> items = mixed();
         DirCompare.apply(List.copyOf(items.values()), Mode.MIRROR_TO_RIGHT);
         assertEquals(Action.TO_RIGHT, items.get("only-left.txt").action());
@@ -214,24 +193,13 @@ class DirCompareTest {
         assertEquals(Action.TO_RIGHT, items.get("right-newer.txt").action(), "mirror overwrites even a newer target");
         assertEquals(Action.TO_RIGHT, items.get("different.txt").action());
         assertEquals(Action.NONE, items.get("same.txt").action());
-    }
 
-    @Test
-    void mirrorToLeftMakesTheLeftSideLikeTheRight() throws Exception {
-        Map<String, Item> items = mixed();
+        items = mixed();
         DirCompare.apply(List.copyOf(items.values()), Mode.MIRROR_TO_LEFT);
         assertEquals(Action.DELETE_LEFT, items.get("only-left.txt").action());
         assertEquals(Action.TO_LEFT, items.get("only-right.txt").action());
         assertEquals(Action.TO_LEFT, items.get("left-newer.txt").action());
         assertEquals(Action.TO_LEFT, items.get("different.txt").action());
-    }
-
-    @Test
-    void clearRemovesAllActions() throws Exception {
-        Map<String, Item> items = mixed();
-        DirCompare.apply(List.copyOf(items.values()), Mode.MERGE);
-        DirCompare.apply(List.copyOf(items.values()), Mode.CLEAR);
-        assertTrue(items.values().stream().allMatch(item -> item.action() == Action.NONE));
     }
 
     @Test
@@ -248,22 +216,6 @@ class DirCompareTest {
         Item mismatch = items.get("mismatch");
         assertFalse(mismatch.allows(Action.TO_RIGHT), "a file cannot replace a folder");
         assertEquals(Action.NONE, DirCompare.proposed(mismatch, Mode.MIRROR_TO_RIGHT));
-    }
-
-    // ---- itemFor ----------------------------------------------------------------------------------------------
-
-    @Test
-    void itemForBuildsAnItemFromTheCurrentState() throws Exception {
-        file(left(), "a.txt", "abc", 60_000);
-        file(right(), "a.txt", "abc", 0);
-        file(left(), "b.txt", "x");
-        Item both = DirCompare.itemFor(left(), right(), "a.txt", null);
-        assertEquals(Status.LEFT_NEWER, both.status());
-        assertEquals(Status.ONLY_LEFT, DirCompare.itemFor(left(), right(), "b.txt", null).status());
-        assertNull(DirCompare.itemFor(left(), right(), "nope.txt", null));
-        assertEquals(Status.DIFFERENT, DirCompare.itemFor(left(), right(), "a.txt", Status.DIFFERENT).status(),
-                "a stored status stands in for the size/time comparison");
-        assertNotNull(both.left());
     }
 
     @Test

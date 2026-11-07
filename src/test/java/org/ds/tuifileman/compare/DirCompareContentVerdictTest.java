@@ -43,20 +43,16 @@ class DirCompareContentVerdictTest {
     }
 
     @Test
-    void theVerdictFollowsTheBytesWhateverTheTimes() throws Exception {
+    void theVerdictFollowsTheBytesWhateverTheTimesAndWithoutItTheNewerSideIsNamed() throws Exception {
         fixture();
         Map<String, Status> status = scan(true);
         assertEquals(Status.DIFFERENT, status.get("size.txt"), "other size, left is newer");
         assertEquals(Status.DIFFERENT, status.get("bytes.txt"), "other bytes, right is newer");
         assertEquals(Status.SAME, status.get("same.txt"), "equal bytes are the same whatever the times");
-    }
 
-    @Test
-    void withoutTheVerdictTheNewerSideIsNamed() throws Exception {
-        fixture();
-        Map<String, Status> status = scan(false);
-        assertEquals(Status.LEFT_NEWER, status.get("size.txt"));
-        assertEquals(Status.RIGHT_NEWER, status.get("bytes.txt"));
-        assertEquals(Status.SAME, status.get("same.txt"));
+        Map<String, Status> direction = scan(false);
+        assertEquals(Status.LEFT_NEWER, direction.get("size.txt"));
+        assertEquals(Status.RIGHT_NEWER, direction.get("bytes.txt"));
+        assertEquals(Status.SAME, direction.get("same.txt"));
     }
 }

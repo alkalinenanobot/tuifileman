@@ -28,6 +28,8 @@ notes; items marked "unverified" were never checked on a real setup.
 - Panels: parallel listing of huge folders.
 - Viewer: follow mode; long-line wrap in the compare view; terminal capability query (DA1) to
   choose sixel automatically; PDF page prefetch, zoom/scroll within a page, fit-width.
+- Viewer: rectangular (column) selection with Alt+drag, for tables and aligned columns; double-click to select a
+  word.
 - Editor: overwrite mode, wide-character column handling, files over 32 MB.
 - Configuration: start folders, F-key actions.
 - Command palette: recently used first, entries that are not in a menu.

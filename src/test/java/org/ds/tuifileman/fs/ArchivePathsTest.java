@@ -56,15 +56,10 @@ class ArchivePathsTest {
     }
 
     @Test
-    void theArchiveItselfAndAFolderInsideAreAddressable() throws Exception {
+    void theArchiveAndItsFoldersAreAddressableAndAMissingEntryDoesNotExist() throws Exception {
         Path archive = zip("a.zip", "dir/f.txt", "hello");
         assertTrue(Files.isDirectory(ArchivePaths.resolve(archive + "!")));
         assertTrue(Files.isDirectory(ArchivePaths.resolve(archive + "!/dir")));
-    }
-
-    @Test
-    void aMissingEntryResolvesToAPathThatDoesNotExist() throws Exception {
-        Path archive = zip("a.zip", "f.txt", "x");
         assertFalse(Files.exists(ArchivePaths.resolve(archive + "!/nope.txt")));
     }
 

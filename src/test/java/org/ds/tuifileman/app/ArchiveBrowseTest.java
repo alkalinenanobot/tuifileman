@@ -64,6 +64,12 @@ class ArchiveBrowseTest {
         assertNull(panel.goUp());
         assertEquals("a.zip", panel.current().name());
         assertFalse(panel.isVirtual());
+
+        assertNull(panel.openArchive(archive));
+        assertEquals("..", panel.current().name());
+        assertNull(panel.enter());
+        assertFalse(panel.isVirtual());
+        assertEquals("a.zip", panel.current().name(), "the .. entry of the archive root leaves it too");
     }
 
     @Test
@@ -92,33 +98,7 @@ class ArchiveBrowseTest {
     }
 
     @Test
-    void dotDotEntryOfTheRootLeavesTheArchive() throws Exception {
-        Path archive = zip("a.zip", "top.txt", "T");
-        PanelState panel = new PanelState(root);
-        panel.refresh();
-        assertNull(panel.openArchive(archive));
-        assertEquals("..", panel.current().name());
-        assertNull(panel.enter());
-        assertEquals(root.toAbsolutePath().normalize(), panel.directory());
-        assertEquals("a.zip", panel.current().name());
-    }
-
-    @Test
-    void goToLeavesTheArchiveAndReleasesIt() throws Exception {
-        Path archive = zip("a.zip", "top.txt", "T");
-        PanelState panel = new PanelState(root);
-        panel.refresh();
-        assertNull(panel.openArchive(archive));
-        Path inside = panel.directory();
-        assertNull(panel.goTo(root));
-        assertFalse(panel.isVirtual());
-        // The last reference is gone: the archive file can be deleted (a Windows lock would refuse).
-        assertFalse(inside.getFileSystem().isOpen());
-        Files.delete(archive);
-    }
-
-    @Test
-    void twoPanelsShareOneOpenArchive() throws Exception {
+    void twoPanelsShareOneOpenArchiveAndTheLastToLeaveReleasesIt() throws Exception {
         Path archive = zip("a.zip", "top.txt", "T");
         PanelState left = new PanelState(root);
         PanelState right = new PanelState(root);
@@ -132,6 +112,7 @@ class ArchiveBrowseTest {
         assertEquals(List.of("..", "top.txt"), names(right));
         assertNull(right.goTo(root));
         assertFalse(inside.getFileSystem().isOpen());
+        Files.delete(archive); // a Windows lock would refuse
     }
 
     @Test

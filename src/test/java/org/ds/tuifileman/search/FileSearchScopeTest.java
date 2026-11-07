@@ -108,7 +108,7 @@ class FileSearchScopeTest {
     }
 
     @Test
-    void anArchiveFileCanBeTheRoot() throws Exception {
+    void anArchiveOrAFolderInsideItCanBeTheRootAndTheExcludeStillApplies() throws Exception {
         Path archive = zip("pack.zip", "BuildID.txt", "id 42", "dir/other.txt", "needle");
         FileSearch search = run(query(archive, "*.txt", false, "", p -> false, IgnoreMatcher.NONE));
         assertNull(search.error());
@@ -128,18 +128,15 @@ class FileSearchScopeTest {
         assertNotNull(hit);
         assertEquals(archive + "!/dir/other.txt", hit.path());
         assertEquals(1, hit.line());
-    }
 
-    @Test
-    void aFolderInsideAnArchiveCanBeTheRootAndTheExcludeStillApplies() throws Exception {
-        Path archive = zip("pack.zip", "top.txt", "x", "dir/a.txt", "x", "dir/skip/b.txt", "x");
-        Path inside = ArchivePaths.resolve(archive + "!/dir");
-        List<String> found = new ArrayList<>();
-        FileSearch search = run(query(inside, "*.txt", false, "", relative -> relative.equals("skip"), IgnoreMatcher.NONE));
-        for (Hit hit; (hit = search.poll()) != null; ) {
-            found.add(hit.path());
+        Path nested = zip("nested.zip", "top.txt", "x", "dir/a.txt", "x", "dir/skip/b.txt", "x");
+        Path inside = ArchivePaths.resolve(nested + "!/dir");
+        List<String> below = new ArrayList<>();
+        FileSearch folder = run(query(inside, "*.txt", false, "", relative -> relative.equals("skip"), IgnoreMatcher.NONE));
+        for (Hit entry; (entry = folder.poll()) != null; ) {
+            below.add(entry.path());
         }
-        assertEquals(List.of(archive + "!/dir/a.txt"), found);
+        assertEquals(List.of(nested + "!/dir/a.txt"), below);
     }
 
     @Test

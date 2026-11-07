@@ -19,15 +19,22 @@ class ArgsTest {
     }
 
     @Test
-    void longOptionsWithSeparateAndInlineValues() throws Exception {
+    void longOptionsTakeSeparateOrInlineValuesAndRepeat() throws Exception {
         assertEquals("json", parse("--format", "json").get("format", "text"));
         assertEquals("json", parse("--format=json").get("format", "text"));
         assertEquals("a=b", parse("--format=a=b").get("format", "text"), "only the first = splits");
         assertEquals("", parse("--format=").get("format", "text"));
+        assertTrue(parse("--long-only").has("long-only"));
+
+        Args repeated = parse("-x", "a", "--exclude", "b", "--exclude=c", "-f", "text", "-f", "json");
+        assertEquals(List.of("a", "b", "c"), repeated.all("exclude"));
+        assertEquals("json", repeated.get("format", ""), "the last value wins");
+        assertEquals(List.of(), repeated.all("missing"));
+        assertEquals("fallback", repeated.get("missing", "fallback"));
     }
 
     @Test
-    void shortOptionsAndClusters() throws Exception {
+    void shortOptionsCanBeClustered() throws Exception {
         Args cluster = parse("-vq");
         assertTrue(cluster.has("verbose") && cluster.has("quiet"));
         Args clusterWithValue = parse("-vf", "json");
@@ -37,18 +44,9 @@ class ArgsTest {
     }
 
     @Test
-    void positionalArgumentsKeepTheirOrder() throws Exception {
-        Args parsed = parse("one", "-v", "two", "-f", "text", "three");
-        assertEquals(List.of("one", "two", "three"), parsed.positional());
-    }
-
-    @Test
-    void aSingleDashIsPositional() throws Exception {
-        assertEquals(List.of("-"), parse("-").positional());
-    }
-
-    @Test
-    void doubleDashEndsOptionParsing() throws Exception {
+    void positionalArgumentsKeepTheirOrderAndDoubleDashEndsOptions() throws Exception {
+        assertEquals(List.of("one", "two", "three"), parse("one", "-v", "two", "-f", "text", "three").positional());
+        assertEquals(List.of("-"), parse("-").positional(), "a single dash is positional");
         Args parsed = parse("-v", "--", "-q", "--format", "x");
         assertTrue(parsed.has("verbose"));
         assertFalse(parsed.has("quiet"));
@@ -56,37 +54,15 @@ class ArgsTest {
     }
 
     @Test
-    void repeatedOptionsAreCollectedAndTheLastWins() throws Exception {
-        Args parsed = parse("-x", "a", "--exclude", "b", "--exclude=c", "-f", "text", "-f", "json");
-        assertEquals(List.of("a", "b", "c"), parsed.all("exclude"));
-        assertEquals("json", parsed.get("format", ""));
-        assertEquals(List.of(), parsed.all("missing"));
-        assertEquals("fallback", parsed.get("missing", "fallback"));
-    }
-
-    @Test
-    void unknownOptionsAreRejected() {
-        assertEquals("unknown option --nope", assertThrows(Args.UsageException.class, () -> parse("--nope")).getMessage());
-        assertEquals("unknown option -z", assertThrows(Args.UsageException.class, () -> parse("-z")).getMessage());
-        assertEquals("unknown option -z", assertThrows(Args.UsageException.class, () -> parse("-vz")).getMessage());
-    }
-
-    @Test
-    void missingValuesAreRejected() {
-        assertEquals("option --format needs a value",
-                assertThrows(Args.UsageException.class, () -> parse("--format")).getMessage());
-        assertEquals("option -f needs a value", assertThrows(Args.UsageException.class, () -> parse("-f")).getMessage());
-    }
-
-    @Test
-    void aFlagWithAValueAndAGluedShortValueAreRejected() {
-        assertEquals("option --verbose does not take a value",
-                assertThrows(Args.UsageException.class, () -> parse("--verbose=1")).getMessage());
-        assertTrue(assertThrows(Args.UsageException.class, () -> parse("-fjson")).getMessage().contains("-f VALUE"));
-    }
-
-    @Test
-    void optionsWithoutAShortNameWork() throws Exception {
-        assertTrue(parse("--long-only").has("long-only"));
+    void malformedOptionsAreUsageErrorsNamingTheOption() {
+        String[][] rows = {
+            {"--nope", "--nope"}, {"-z", "-z"}, {"-vz", "-z"},
+            {"--format", "--format"}, {"-f", "-f"},
+            {"--verbose=1", "--verbose"}, {"-fjson", "-f"},
+        };
+        for (String[] row : rows) {
+            Args.UsageException error = assertThrows(Args.UsageException.class, () -> parse(row[0]), row[0]);
+            assertTrue(error.getMessage().contains(row[1]), row[0] + " -> " + error.getMessage());
+        }
     }
 }

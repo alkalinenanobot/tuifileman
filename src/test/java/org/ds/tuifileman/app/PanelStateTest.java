@@ -39,10 +39,8 @@ class PanelStateTest {
         return state.entries().stream().map(FileEntry::name).toList();
     }
 
-    @Test
-    void listingHasParentFirstThenFoldersThenFilesIgnoringCase() throws Exception {
-        assertEquals(List.of("..", "Alpha", "beta", "sub", "apple.txt", "Banana.txt", "ice-cream.txt", "zeta.txt"),
-                names(panel()));
+    private static List<String> names(List<FileEntry> entries) {
+        return entries.stream().map(FileEntry::name).toList();
     }
 
     @Test
@@ -77,8 +75,15 @@ class PanelStateTest {
     }
 
     @Test
-    void marksSkipTheParentEntryAndTrackSizes() throws Exception {
+    void marksSkipTheParentEntryTrackSizesAndDecideTheTargets() throws Exception {
         PanelState state = panel();
+        assertEquals(7, state.markedOrAll().size(), "without marks everything but ..");
+        assertFalse(names(state.markedOrAll()).contains(".."));
+        assertTrue(state.targets().isEmpty(), "the cursor starts on ..");
+        state.selectName("beta", ROWS);
+        assertEquals(List.of("beta"), names(state.targets()), "no marks: the entry under the cursor");
+
+        state.cursorTo(0, ROWS);
         state.toggleMark(ROWS, true);
         assertEquals(0, state.markedCount(), "the .. entry cannot be marked");
         assertEquals(0, state.cursor(), "nothing happens on ..");
@@ -87,9 +92,11 @@ class PanelStateTest {
         state.toggleMark(ROWS, false);
         state.selectName("zeta.txt", ROWS);
         state.toggleMark(ROWS, false);
-        assertEquals(List.of("apple.txt", "Banana.txt", "zeta.txt"),
-                state.markedOrAll().stream().map(FileEntry::name).toList());
+        assertEquals(List.of("apple.txt", "Banana.txt", "zeta.txt"), names(state.markedOrAll()));
         assertEquals(6, state.markedSize(), "aa + bbb + z");
+        state.selectName("sub", ROWS);
+        assertEquals(List.of("apple.txt", "Banana.txt", "zeta.txt"), names(state.targets()), "marks win over the cursor");
+        state.selectName("zeta.txt", ROWS);
         state.toggleMark(ROWS, false);
         assertFalse(state.isMarked(state.current()));
         state.clearMarks();
@@ -107,31 +114,11 @@ class PanelStateTest {
         assertTrue(state.markedOrAll().stream().anyMatch(FileEntry::directory), "directories are inverted too");
         assertTrue(state.markedOrAll().stream().noneMatch(e -> e.name().equals("..")));
         state.invertMarks(true);
-        assertEquals(List.of("apple.txt"), state.markedOrAll().stream().map(FileEntry::name).toList());
+        assertEquals(List.of("apple.txt"), names(state.markedOrAll()));
         state.clearMarks();
         state.invertMarks(false);
         assertTrue(state.markedOrAll().stream().noneMatch(FileEntry::directory), "files only");
         assertEquals(state.markedCount(), state.markedOrAll().size());
-    }
-
-    @Test
-    void targetsAreTheMarkedEntriesOrTheOneUnderTheCursor() throws Exception {
-        PanelState state = panel();
-        assertTrue(state.targets().isEmpty(), "the cursor starts on ..");
-        state.selectName("beta", ROWS);
-        assertEquals(List.of("beta"), state.targets().stream().map(FileEntry::name).toList());
-        state.selectName("apple.txt", ROWS);
-        state.toggleMark(ROWS, false);
-        state.selectName("sub", ROWS);
-        assertEquals(List.of("apple.txt"), state.targets().stream().map(FileEntry::name).toList(),
-                "marks win over the cursor");
-    }
-
-    @Test
-    void markedOrAllFallsBackToEverythingExceptTheParent() throws Exception {
-        PanelState state = panel();
-        assertEquals(7, state.markedOrAll().size());
-        assertFalse(state.markedOrAll().stream().anyMatch(entry -> entry.name().equals("..")));
     }
 
     @Test
@@ -148,22 +135,25 @@ class PanelStateTest {
     }
 
     @Test
-    void quickSearchPrefersAPrefixOverAContainsMatch() throws Exception {
+    void quickSearchPrefersAPrefixThenContainsStepsThroughMatchesAndReportsNoMatch() throws Exception {
         PanelState state = panel();
         state.searchAppend('a', ROWS);
         assertEquals("Alpha", state.current().name());
+        assertTrue(state.searching());
+        state.searchStep(1, ROWS);
+        assertEquals("apple.txt", state.current().name());
+        state.searchStep(1, ROWS);
+        assertEquals("apple.txt", state.current().name(), "no further prefix match: Banana only contains the letter");
+        state.searchStep(-1, ROWS);
+        assertEquals("Alpha", state.current().name());
         state.searchAppend('p', ROWS);
         assertEquals("apple.txt", state.current().name(), "'ap' is a prefix of apple.txt and only inside Alpha");
-        assertTrue(state.searching());
-        assertTrue(state.searchMatched());
-    }
+        state.searchClear();
+        assertFalse(state.searching());
 
-    @Test
-    void quickSearchFallsBackToContainsAndReportsNoMatch() throws Exception {
-        PanelState state = panel();
         state.searchAppend('c', ROWS);
         state.searchAppend('r', ROWS);
-        assertEquals("ice-cream.txt", state.current().name());
+        assertEquals("ice-cream.txt", state.current().name(), "no prefix match: falls back to contains");
         state.searchAppend('x', ROWS);
         assertFalse(state.searchMatched());
         state.searchBackspace(ROWS);
@@ -175,24 +165,13 @@ class PanelStateTest {
     }
 
     @Test
-    void quickSearchStepsThroughTheMatches() throws Exception {
-        PanelState state = panel();
-        state.searchAppend('a', ROWS);
-        assertEquals("Alpha", state.current().name());
-        state.searchStep(1, ROWS);
-        assertEquals("apple.txt", state.current().name());
-        state.searchStep(1, ROWS);
-        assertEquals("apple.txt", state.current().name(), "no further prefix match: Banana only contains the letter");
-        state.searchStep(-1, ROWS);
-        assertEquals("Alpha", state.current().name());
-        state.searchClear();
-        assertFalse(state.searching());
-    }
-
-    @Test
-    void enterAndGoUpKeepTheCursorOnWhereYouCameFrom() throws Exception {
+    void enterAndGoUpKeepTheCursorOnWhereYouCameFromAndTheParentEntryGoesUpToo() throws Exception {
         PanelState state = panel();
         file(root, "sub/inner.txt", "i");
+        state.selectName("zeta.txt", ROWS);
+        assertEquals("zeta.txt is not a directory", state.enter());
+        assertEquals(root, state.directory());
+
         state.selectName("sub", ROWS);
         assertNull(state.enter());
         assertEquals(root.resolve("sub"), state.directory());
@@ -201,28 +180,59 @@ class PanelStateTest {
         assertNull(state.goUp());
         assertEquals(root, state.directory());
         assertEquals("sub", state.current().name());
+
+        state.selectName("Alpha", ROWS);
+        assertNull(state.enter());
+        assertEquals("..", state.current().name());
+        assertNull(state.enter());
+        assertEquals(root, state.directory());
+        assertEquals("Alpha", state.current().name());
     }
 
     @Test
-    void sortBySizeStartsBiggestFirstAndTheSameKeyReverses() throws Exception {
+    void emptyAndMissingFoldersAreHandled() throws Exception {
+        dir(root, "empty");
+        PanelState empty = new PanelState(root.resolve("empty"));
+        empty.refresh();
+        assertEquals(List.of(".."), names(empty), "an empty folder still has the parent entry");
+        assertTrue(empty.targets().isEmpty());
+        assertTrue(empty.markedOrAll().isEmpty());
+
         PanelState state = panel();
+        String error = state.goTo(root.resolve("nope"));
+        assertNotNull(error);
+        assertTrue(error.startsWith("Cannot open "), error);
+        assertEquals(root, state.directory(), "a missing folder keeps the current one");
+        assertFalse(state.entries().isEmpty());
+
+        file(root, "sub/x.txt", "x");
+        state.selectName("sub", ROWS);
+        state.enter();
+        try (var walk = Files.walk(root.resolve("sub"))) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+        }
+        assertNotNull(state.refresh(), "a vanished folder is reported");
+        assertTrue(state.entries().isEmpty());
+        assertNull(state.current());
+    }
+
+    @Test
+    void foldersComeFirstAndEverySortKeyOrdersTheFilesWithinThem() throws Exception {
+        PanelState state = panel();
+        assertEquals(List.of("..", "Alpha", "beta", "sub", "apple.txt", "Banana.txt", "ice-cream.txt", "zeta.txt"),
+                names(state), "by name ignoring case");
         state.sortBy(EntrySort.Key.SIZE, ROWS);
         // Folders have no size: they keep name order. Equal sizes go by name.
         assertEquals(List.of("..", "Alpha", "beta", "sub", "Banana.txt", "apple.txt", "ice-cream.txt", "zeta.txt"),
-                names(state));
+                names(state), "size, biggest first");
         state.sortBy(EntrySort.Key.SIZE, ROWS);
         assertEquals(List.of("..", "Alpha", "beta", "sub", "ice-cream.txt", "zeta.txt", "apple.txt", "Banana.txt"),
-                names(state));
+                names(state), "the same key again reverses");
         state.sortBy(EntrySort.Key.NAME, ROWS);
-        assertEquals(List.of("..", "Alpha", "beta", "sub", "apple.txt", "Banana.txt", "ice-cream.txt", "zeta.txt"),
-                names(state));
         state.sortBy(EntrySort.Key.NAME, ROWS);
         assertEquals(List.of("..", "sub", "beta", "Alpha", "zeta.txt", "ice-cream.txt", "Banana.txt", "apple.txt"),
-                names(state));
-    }
+                names(state), "name reversed");
 
-    @Test
-    void sortByExtensionPutsNamesWithoutOneFirst() throws Exception {
         Path folder = dir(root, "mixed");
         file(folder, "b.md", "b");
         file(folder, "a.txt", "a");
@@ -231,10 +241,11 @@ class PanelStateTest {
         file(folder, "archive.tar.GZ", "g");
         dir(folder, "z.d");
         dir(folder, "a.x");
-        PanelState state = new PanelState(folder);
-        state.refresh();
-        state.sortBy(EntrySort.Key.EXTENSION, ROWS);
-        assertEquals(List.of("..", "a.x", "z.d", ".hidden", "c", "archive.tar.GZ", "b.md", "a.txt"), names(state));
+        PanelState mixed = new PanelState(folder);
+        mixed.refresh();
+        mixed.sortBy(EntrySort.Key.EXTENSION, ROWS);
+        assertEquals(List.of("..", "a.x", "z.d", ".hidden", "c", "archive.tar.GZ", "b.md", "a.txt"), names(mixed),
+                "extension: names without one first");
     }
 
     @Test
@@ -247,62 +258,9 @@ class PanelStateTest {
         state.selectName("zeta.txt", ROWS);
         state.sortBy(EntrySort.Key.SIZE, ROWS);
         assertEquals("zeta.txt", state.current().name());
-        assertEquals(List.of("apple.txt"), state.targets().stream().map(FileEntry::name).toList());
+        assertEquals(List.of("apple.txt"), names(state.targets()));
         state.selectName("sub", ROWS);
         assertNull(state.enter());
         assertEquals(List.of("..", "large.txt", "small.txt"), names(state));
-    }
-
-    @Test
-    void enteringTheParentEntryGoesUpToo() throws Exception {
-        PanelState state = panel();
-        state.selectName("Alpha", ROWS);
-        state.enter();
-        assertEquals("..", state.current().name());
-        assertNull(state.enter());
-        assertEquals(root, state.directory());
-        assertEquals("Alpha", state.current().name());
-    }
-
-    @Test
-    void enteringAFileIsRefused() throws Exception {
-        PanelState state = panel();
-        state.selectName("zeta.txt", ROWS);
-        assertEquals("zeta.txt is not a directory", state.enter());
-        assertEquals(root, state.directory());
-    }
-
-    @Test
-    void goToAMissingFolderKeepsTheCurrentOne() throws Exception {
-        PanelState state = panel();
-        String error = state.goTo(root.resolve("nope"));
-        assertNotNull(error);
-        assertTrue(error.startsWith("Cannot open "), error);
-        assertEquals(root, state.directory());
-        assertFalse(state.entries().isEmpty());
-    }
-
-    @Test
-    void refreshReportsAVanishedFolder() throws Exception {
-        PanelState state = panel();
-        file(root, "sub/x.txt", "x");
-        state.selectName("sub", ROWS);
-        state.enter();
-        try (var walk = Files.walk(root.resolve("sub"))) {
-            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
-        }
-        assertEquals("Directory no longer exists", state.refresh());
-        assertTrue(state.entries().isEmpty());
-        assertNull(state.current());
-    }
-
-    @Test
-    void anEmptyFolderStillHasTheParentEntry() throws Exception {
-        dir(root, "empty");
-        PanelState state = new PanelState(root.resolve("empty"));
-        state.refresh();
-        assertEquals(List.of(".."), names(state));
-        assertTrue(state.targets().isEmpty());
-        assertTrue(state.markedOrAll().isEmpty());
     }
 }

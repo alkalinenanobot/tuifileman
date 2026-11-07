@@ -80,16 +80,12 @@ class FileViewHighlightTest {
     }
 
     @Test
-    void highlightOffAndAFileOverTheLimitStayPlain() throws Exception {
+    void highlightOffAFileOverTheLimitUnknownExtensionsAndBinaryBytesStayPlain() throws Exception {
         assertEquals(THEME.text(), at(show("A.java", utf8("int x;\n"), "viewer.highlight = false"), 0, 1)
                 .getForegroundColor());
         assertEquals(THEME.text(), at(show("A.java", utf8("int x;\n"), "viewer.highlight_max_kb = 0"), 0, 1)
                 .getForegroundColor());
         assertTrue(!row(show("A.java", utf8("int x;\n"), "viewer.highlight = false"), 0).contains("Java"));
-    }
-
-    @Test
-    void unknownExtensionsAndBinaryBytesStayPlain() throws Exception {
         assertEquals(THEME.text(), at(show("notes.txt", utf8("int x;\n"), ""), 0, 1).getForegroundColor());
         // Bytes that are not UTF-8 and not decodable one to one are refused by the engine; the text still shows.
         TerminalScreen screen = show("B.java", new byte[] {'i', 'n', 't', ' ', (byte) 0xE9, ';', '\n'}, "");

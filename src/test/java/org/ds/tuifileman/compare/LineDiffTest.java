@@ -24,48 +24,32 @@ class LineDiffTest {
     }
 
     @Test
-    void identicalInputsHaveNoChanges() {
-        boolean[][] result = LineDiff.diff(new int[] {1, 2, 3}, new int[] {1, 2, 3});
-        assertArrayEquals(new boolean[3], result[0]);
-        assertArrayEquals(new boolean[3], result[1]);
-    }
-
-    @Test
-    void emptyInputs() {
+    void identicalAndEmptyInputsMarkNothingAndOneSidedInputsMarkEverything() {
+        boolean[][] same = LineDiff.diff(new int[] {1, 2, 3}, new int[] {1, 2, 3});
+        assertArrayEquals(new boolean[3], same[0]);
+        assertArrayEquals(new boolean[3], same[1]);
         boolean[][] both = LineDiff.diff(new int[0], new int[0]);
         assertEquals(0, both[0].length);
         boolean[][] added = LineDiff.diff(new int[0], new int[] {1, 2});
         assertArrayEquals(new boolean[] {true, true}, added[1]);
         boolean[][] removed = LineDiff.diff(new int[] {1, 2}, new int[0]);
         assertArrayEquals(new boolean[] {true, true}, removed[0]);
+        boolean[][] disjoint = LineDiff.diff(new int[] {1, 2}, new int[] {3, 4, 5});
+        assertArrayEquals(new boolean[] {true, true}, disjoint[0]);
+        assertArrayEquals(new boolean[] {true, true, true}, disjoint[1]);
     }
 
     @Test
-    void insertionMarksOnlyTheNewLine() {
-        boolean[][] result = LineDiff.diff(new int[] {1, 2, 3}, new int[] {1, 2, 9, 3});
-        assertArrayEquals(new boolean[3], result[0]);
-        assertArrayEquals(new boolean[] {false, false, true, false}, result[1]);
-    }
-
-    @Test
-    void deletionMarksOnlyTheRemovedLine() {
-        boolean[][] result = LineDiff.diff(new int[] {1, 2, 3, 4}, new int[] {1, 3, 4});
-        assertArrayEquals(new boolean[] {false, true, false, false}, result[0]);
-        assertArrayEquals(new boolean[3], result[1]);
-    }
-
-    @Test
-    void replacementMarksBothSides() {
-        boolean[][] result = LineDiff.diff(new int[] {1, 2, 3}, new int[] {1, 9, 3});
-        assertArrayEquals(new boolean[] {false, true, false}, result[0]);
-        assertArrayEquals(new boolean[] {false, true, false}, result[1]);
-    }
-
-    @Test
-    void completelyDifferentInputsAreAllChanged() {
-        boolean[][] result = LineDiff.diff(new int[] {1, 2}, new int[] {3, 4, 5});
-        assertArrayEquals(new boolean[] {true, true}, result[0]);
-        assertArrayEquals(new boolean[] {true, true, true}, result[1]);
+    void insertionDeletionAndReplacementMarkOnlyTheLinesInvolved() {
+        boolean[][] inserted = LineDiff.diff(new int[] {1, 2, 3}, new int[] {1, 2, 9, 3});
+        assertArrayEquals(new boolean[3], inserted[0], "insertion");
+        assertArrayEquals(new boolean[] {false, false, true, false}, inserted[1], "insertion");
+        boolean[][] deleted = LineDiff.diff(new int[] {1, 2, 3, 4}, new int[] {1, 3, 4});
+        assertArrayEquals(new boolean[] {false, true, false, false}, deleted[0], "deletion");
+        assertArrayEquals(new boolean[3], deleted[1], "deletion");
+        boolean[][] replaced = LineDiff.diff(new int[] {1, 2, 3}, new int[] {1, 9, 3});
+        assertArrayEquals(new boolean[] {false, true, false}, replaced[0], "replacement");
+        assertArrayEquals(new boolean[] {false, true, false}, replaced[1], "replacement");
     }
 
     @Test

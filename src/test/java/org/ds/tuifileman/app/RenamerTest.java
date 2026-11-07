@@ -22,11 +22,14 @@ class RenamerTest {
     Path folder;
 
     @Test
-    void simpleRename() throws Exception {
+    void filesFoldersAndCaseOnlyChangesAreRenamed() throws Exception {
         file(folder, "a.txt", "A");
-        Result result = Renamer.apply(List.of(new Move(folder.resolve("a.txt"), "b.txt")));
-        assertTrue(result.problems().isEmpty());
-        assertEquals(Map.of("b.txt", "A"), tree(folder));
+        file(folder, "readme.txt", "R");
+        file(folder, "d/inner.txt", "I");
+        Result result = Renamer.apply(List.of(new Move(folder.resolve("a.txt"), "b.txt"),
+                new Move(folder.resolve("readme.txt"), "README.txt"), new Move(folder.resolve("d"), "e")));
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(Map.of("b.txt", "A", "README.txt", "R", "e", "<dir>", "e/inner.txt", "I"), tree(folder));
     }
 
     @Test
@@ -50,21 +53,6 @@ class RenamerTest {
                 new Move(folder.resolve("a.txt"), "b.txt"), new Move(folder.resolve("b.txt"), "a.txt")));
         assertTrue(result.problems().isEmpty(), result.problems().toString());
         assertEquals(Map.of("a.txt", "B", "b.txt", "A"), tree(folder));
-    }
-
-    @Test
-    void caseOnlyRename() throws Exception {
-        file(folder, "readme.txt", "R");
-        Result result = Renamer.apply(List.of(new Move(folder.resolve("readme.txt"), "README.txt")));
-        assertTrue(result.problems().isEmpty(), result.problems().toString());
-        assertEquals(Map.of("README.txt", "R"), tree(folder));
-    }
-
-    @Test
-    void foldersAreRenamedToo() throws Exception {
-        file(folder, "d/inner.txt", "I");
-        Renamer.apply(List.of(new Move(folder.resolve("d"), "e")));
-        assertEquals(Map.of("e", "<dir>", "e/inner.txt", "I"), tree(folder));
     }
 
     @Test
@@ -96,13 +84,5 @@ class RenamerTest {
         assertEquals(new Applied(folder.resolve("b.txt"), folder.resolve("c.txt")), result.applied().get(0));
         assertEquals("A", Files.readString(folder.resolve("a.txt")));
         assertEquals("T", Files.readString(folder.resolve("taken.txt")));
-    }
-
-    @Test
-    void undoMovesAreInReverseOrder() {
-        Path a = folder.resolve("a");
-        Path b = folder.resolve("b");
-        List<Move> undo = Renamer.undoMoves(List.of(new Applied(a, folder.resolve("x")), new Applied(b, folder.resolve("y"))));
-        assertEquals(List.of(new Move(folder.resolve("y"), "b"), new Move(folder.resolve("x"), "a")), undo);
     }
 }

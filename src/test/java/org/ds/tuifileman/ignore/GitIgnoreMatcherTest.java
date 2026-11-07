@@ -37,56 +37,36 @@ class GitIgnoreMatcherTest {
     }
 
     @Test
-    void noRulesIgnoreNothing() throws IOException {
-        assertTrue(GitIgnoreMatcher.create(List.of(), false, left, right, false) == IgnoreMatcher.NONE);
-        assertFalse(IgnoreMatcher.NONE.ignored("anything", false));
-    }
-
-    @Test
-    void wildcardsAndFolderOnlyPatterns() throws IOException {
+    void wildcardsFolderOnlyAnchoredAndDoubleStarPatternsAndLaterRulesWin() throws IOException {
         IgnoreMatcher matcher = withRules("*.log\nbuild/\n");
         assertTrue(matcher.ignored("a.log", false));
         assertTrue(matcher.ignored("build", true));
         assertFalse(matcher.ignored("build", false), "a trailing slash only matches folders");
         assertFalse(matcher.ignored("a.txt", false));
-    }
+        assertFalse(withRules("*.log\n!keep.log\n").ignored("keep.log", false), "a later negation re-includes");
+        assertTrue(withRules("*.log\n!keep.log\n").ignored("a.log", false));
 
-    @Test
-    void aLeadingSlashAnchorsToTheRoot() throws IOException {
-        IgnoreMatcher matcher = withRules("/*.txt\n");
-        assertTrue(matcher.ignored("a.txt", false));
-        assertFalse(matcher.enter("foo", null, null).ignored("bar.txt", false),
+        IgnoreMatcher anchored = withRules("/*.txt\n");
+        assertTrue(anchored.ignored("a.txt", false));
+        assertFalse(anchored.enter("foo", null, null).ignored("bar.txt", false),
                 "an anchored pattern must not match in a subfolder");
+
+        IgnoreMatcher doubleStar = withRules("build/**\n");
+        assertFalse(doubleStar.ignored("build.txt", false), "a trailing /** keeps names that only start the same");
+        assertTrue(doubleStar.enter("build", left, right).ignored("out.o", false));
     }
 
     @Test
-    void aTrailingDoubleStarKeepsNamesThatOnlyStartTheSame() throws IOException {
-        IgnoreMatcher matcher = withRules("build/**\n");
-        assertFalse(matcher.ignored("build.txt", false));
-        assertTrue(matcher.enter("build", left, right).ignored("out.o", false));
-    }
-
-    @Test
-    void laterRulesWinAndNegationReincludes() throws IOException {
-        IgnoreMatcher matcher = withRules("*.log\n!keep.log\n");
-        assertTrue(matcher.ignored("a.log", false));
-        assertFalse(matcher.ignored("keep.log", false));
-    }
-
-    @Test
-    void commentsBlankLinesAndMalformedPatternsAreHarmless() throws IOException {
+    void ruleFilesAreReadLeniently() throws IOException {
         IgnoreMatcher[] holder = new IgnoreMatcher[1];
         assertDoesNotThrow(() -> holder[0] = withRules("# comment\n\n[unclosed\n*.tmp\n"));
         assertTrue(holder[0].ignored("x.tmp", false), "a bad line must not stop the good ones");
         assertFalse(holder[0].ignored("# comment", false));
-    }
 
-    @Test
-    void windowsLineEndingsAndAByteOrderMarkAreHandled() throws IOException {
         Path file = temp.resolve("crlf.ignore");
         Files.write(file, "\uFEFF*.log\r\nbuild/\r\n".getBytes(StandardCharsets.UTF_8));
         IgnoreMatcher matcher = GitIgnoreMatcher.create(List.of(file), false, left, right, false);
-        assertTrue(matcher.ignored("a.log", false));
+        assertTrue(matcher.ignored("a.log", false), "a byte order mark and CRLF line ends are skipped");
         assertTrue(matcher.ignored("build", true));
     }
 
@@ -140,7 +120,9 @@ class GitIgnoreMatcherTest {
     }
 
     @Test
-    void severalIgnoreFilesAreOneListInOrder() throws IOException {
+    void ignoreFilesFormOneListInOrderAndNoneMeansNothingIsIgnored() throws IOException {
+        assertTrue(GitIgnoreMatcher.create(List.of(), false, left, right, false) == IgnoreMatcher.NONE);
+        assertFalse(IgnoreMatcher.NONE.ignored("anything", false));
         Path first = temp.resolve("first.ignore");
         Path second = temp.resolve("second.ignore");
         Files.writeString(first, "*.log\n");

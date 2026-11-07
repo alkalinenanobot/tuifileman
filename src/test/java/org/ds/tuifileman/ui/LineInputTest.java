@@ -24,16 +24,9 @@ class LineInputTest {
     }
 
     @Test
-    void cursorStartsAtTheEndOfTheInitialText() {
-        LineInput input = new LineInput("needle");
-        assertEquals(6, input.cursor());
-        type(input, "s");
-        assertEquals("needles", input.text());
-    }
-
-    @Test
     void charactersAreInsertedAndDeletedAtTheCursor() {
         LineInput input = new LineInput("helo");
+        assertEquals(4, input.cursor(), "the cursor starts at the end of the initial text");
         input.handle(key(KeyType.ArrowLeft));
         input.handle(key(KeyType.ArrowLeft));
         type(input, "l");
@@ -79,19 +72,14 @@ class LineInputTest {
     }
 
     @Test
-    void controlCharactersAreNotTypedButAltGrCharactersAre() {
-        LineInput input = new LineInput("");
-        assertTrue(input.handle(new KeyStroke('a', true, false, false)));
-        assertEquals("", input.text());
-        assertTrue(input.handle(new KeyStroke('@', true, true, false)));
-        assertEquals("@", input.text());
-    }
-
-    @Test
-    void enterAndEscapeAreLeftToTheCaller() {
+    void onlyPrintableTextIsTypedAndEnterAndEscapeAreLeftToTheCaller() {
         LineInput input = new LineInput("x");
-        assertFalse(input.handle(key(KeyType.Enter)));
-        assertFalse(input.handle(key(KeyType.Escape)));
+        assertTrue(input.handle(new KeyStroke('a', true, false, false)));
         assertEquals("x", input.text());
+        assertTrue(input.handle(new KeyStroke('@', true, true, false)));
+        assertEquals("x@", input.text());
+        assertFalse(input.handle(key(KeyType.Enter)), "Enter is left to the caller");
+        assertFalse(input.handle(key(KeyType.Escape)), "Escape is left to the caller");
+        assertEquals("x@", input.text());
     }
 }

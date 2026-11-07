@@ -58,6 +58,9 @@ class DirCompareIgnoreTest {
         assertFalse(has(items, "node_modules/pkg/index.js"));
         assertEquals(DirCompare.Status.IGNORED, item(items, "app.log").status());
         assertEquals(2, ignored.get(), "the folder counts once, not once per file inside");
+        List<Item> unfiltered = DirCompare.scan(left, right, true, false, new AtomicBoolean(), new AtomicInteger());
+        assertEquals(DirCompare.Status.ONLY_LEFT, item(unfiltered, "app.log").status(), "without a matcher nothing is ignored");
+        assertTrue(has(unfiltered, "node_modules/pkg/index.js"));
     }
 
     @Test
@@ -78,19 +81,13 @@ class DirCompareIgnoreTest {
     }
 
     @Test
-    void explicitRulesCountForBothSides() throws IOException {
-        Path rules = Files.writeString(temp.resolve("rules"), "*.tmp\n");
-        Fixtures.file(left, "a.tmp", "x");
-        List<Item> items = scan(IgnoreMatcher.git(List.of(rules), false, left, right));
-        assertEquals(IgnoreMatcher.BY_LEFT | IgnoreMatcher.BY_RIGHT, item(items, "a.tmp").ignoredBy());
-    }
-
-    @Test
     void anIgnoredItemAllowsNoActionAndNoModeProposesOne() throws IOException {
         Path rules = Files.writeString(temp.resolve("rules"), "*.tmp\n");
         Fixtures.file(left, "a.tmp", "x");
         Fixtures.file(right, "b.tmp", "y");
         List<Item> items = scan(IgnoreMatcher.git(List.of(rules), false, left, right));
+        assertEquals(IgnoreMatcher.BY_LEFT | IgnoreMatcher.BY_RIGHT, item(items, "a.tmp").ignoredBy(),
+                "explicit rules count for both sides");
         for (Mode mode : Mode.values()) {
             DirCompare.apply(items, mode);
             for (Item item : items) {
@@ -127,14 +124,6 @@ class DirCompareIgnoreTest {
         assertTrue(has(items, "a.tmp"));
         assertFalse(has(items, "build"));
         assertEquals(2, ignored.get(), "still counted");
-    }
-
-    @Test
-    void withoutAMatcherNothingChanges() throws IOException {
-        Fixtures.file(left, ".gitignore", "*.log\n");
-        Fixtures.file(left, "a.log", "x");
-        List<Item> items = DirCompare.scan(left, right, true, false, new AtomicBoolean(), new AtomicInteger());
-        assertEquals(DirCompare.Status.ONLY_LEFT, item(items, "a.log").status());
     }
 
     @Test

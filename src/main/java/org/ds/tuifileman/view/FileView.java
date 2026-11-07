@@ -9,6 +9,7 @@ import com.googlecode.lanterna.input.MouseAction;
 import com.googlecode.lanterna.screen.Screen;
 import org.ds.tuifileman.compare.TextCompare;
 import org.ds.tuifileman.config.Config;
+import org.ds.tuifileman.edit.SystemClipboard;
 import org.ds.tuifileman.model.FileEntry;
 import org.ds.tuifileman.syntax.Highlighter;
 import org.ds.tuifileman.syntax.Language;
@@ -30,6 +31,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Arrays;
+import java.util.function.Predicate;
 
 /**
  * Full-screen read-only viewer (F3): text with horizontal panning and a hex dump, for files of any size
@@ -39,6 +42,10 @@ public final class FileView implements Closeable {
     private static final long FAR_LINE_COUNT = 1L << 30;
     private static final int SNIFF_BYTES = 64 * 1024;
     private static final long MAX_CONVERT_BYTES = 64L * 1024 * 1024;
+    private static final int MAX_COPY = 16 * 1024 * 1024;
+
+    /** Puts text on the system clipboard; a field so a test does not touch the real one. */
+    static Predicate<String> clipboard = SystemClipboard::set;
 
     private final Screen screen;
     private final Theme theme;
@@ -84,6 +91,9 @@ public final class FileView implements Closeable {
     private long anchorLines;
     private int gutterDigits = 4;
     private int textX;
+    private Spot selAnchor;
+    private Spot selCursor;
+    private boolean dragging;
 
     private String promptLabel;
     private LineInput promptInput;
@@ -389,15 +399,15 @@ public final class FileView implements Closeable {
     /** Returns false to close the view. */
     private boolean handle(KeyStroke key) throws IOException {
         int h = bodyHeight();
+        if (key.getKeyType() == KeyType.Escape && selecting()) {
+            clearSelection();
+            return true;
+        }
         if (key.getKeyType() == KeyType.EOF || key.getKeyType() == KeyType.Escape) {
             return false;
         }
         if (key instanceof MouseAction mouse) {
-            switch (mouse.getActionType()) {
-                case SCROLL_UP -> scroll(-3, h);
-                case SCROLL_DOWN -> scroll(3, h);
-                default -> { }
-            }
+            mouse(mouse, h);
             return true;
         }
         switch (key.getKeyType()) {
@@ -431,6 +441,9 @@ public final class FileView implements Closeable {
             }
             case Character -> {
                 if (key.isCtrlDown() || key.isAltDown()) {
+                    if (key.isCtrlDown() && !key.isAltDown() && Character.toLowerCase(key.getCharacter()) == 'c') {
+                        copySelection();
+                    }
                     return true;
                 }
                 switch (Character.toLowerCase(key.getCharacter())) {
@@ -443,6 +456,7 @@ public final class FileView implements Closeable {
                     case 'n' -> search(true);
                     case 'p' -> search(false);
                     case 'g' -> goTo();
+                    case 'c' -> copySelection();
                     case ' ' -> scroll(h - 1, h);
                     case 'l' -> {
                         lineNumbers = !lineNumbers;
@@ -533,6 +547,7 @@ public final class FileView implements Closeable {
             return;
         }
         matchStart = -1;
+        clearSelection();
         if (toText) {
             if (!textAvailable) {
                 message = "Text view is not available for this file";
@@ -675,7 +690,7 @@ public final class FileView implements Closeable {
             int index = Math.min(line.text().length(), new String(
                     textWindow.copy(start, (int) Math.min(offset - start, LineReader.CAP)), reader.charset()).length());
             int visual = Draw.expand(line.text(), index, index).from();
-            int row = Wrap.rowOf(Wrap.rows(Draw.expand(line.text()), textWidth()), visual);
+            int row = Wrap.rowOf(rowStarts(Draw.expand(line.text()), textWidth()), visual);
             Pos at = moveUp(new Pos(start, row), context ? h / 3 : 0);
             Pos last = lastPos(h);
             at = at.after(last) ? last : at;
@@ -708,7 +723,18 @@ public final class FileView implements Closeable {
     }
 
     private int rowCount(LineReader.Line line) {
-        return Wrap.count(Draw.expand(line.text()), textWidth());
+        String text = Draw.expand(line.text());
+        return Wrap.count(text, textWidth(), Wrap.hangingIndent(text));
+    }
+
+    /** Start of every screen row of the expanded line; rows after the first are indented under a list marker. */
+    private static int[] rowStarts(String text, int width) {
+        return Wrap.rows(text, width, Wrap.hangingIndent(text));
+    }
+
+    /** Columns the rows after the first of the expanded line are drawn to the right. */
+    private static int indentOf(String text, int width) {
+        return Wrap.shift(Wrap.hangingIndent(text), width);
     }
 
     /** The next screen row, or null at the end of the text. */
@@ -881,6 +907,148 @@ public final class FileView implements Closeable {
         }
     }
 
+    // ---- selection ----
+
+    /** A place in the text: the line starting at byte {@code line} and a column of its expanded text. */
+    private record Spot(long line, int col) implements Comparable<Spot> {
+        @Override
+        public int compareTo(Spot other) {
+            return line != other.line ? Long.compare(line, other.line) : Integer.compare(col, other.col);
+        }
+    }
+
+    private boolean selecting() {
+        return selAnchor != null && !selAnchor.equals(selCursor);
+    }
+
+    private Spot selStart() {
+        return selAnchor.compareTo(selCursor) <= 0 ? selAnchor : selCursor;
+    }
+
+    private Spot selEnd() {
+        return selAnchor.compareTo(selCursor) <= 0 ? selCursor : selAnchor;
+    }
+
+    private void clearSelection() {
+        selAnchor = null;
+        selCursor = null;
+        dragging = false;
+    }
+
+    /**
+     * The left button selects text: pressing sets the anchor, dragging moves the other end (and scrolls when the
+     * pointer leaves the text), releasing copies it. Only the text is selected, never the line numbers.
+     */
+    private void mouse(MouseAction action, int h) throws IOException {
+        TerminalPosition at = action.getPosition();
+        switch (action.getActionType()) {
+            case SCROLL_UP -> scroll(-3, h);
+            case SCROLL_DOWN -> scroll(3, h);
+            case CLICK_DOWN -> {
+                clearSelection();
+                if (textMode && action.getButton() == 1 && at.getRow() >= 1 && at.getRow() <= h) {
+                    selAnchor = locate(at.getColumn(), at.getRow() - 1);
+                    selCursor = selAnchor;
+                    dragging = selAnchor != null;
+                }
+            }
+            case DRAG -> {
+                if (dragging) {
+                    if (at.getRow() < 1) {
+                        scroll(-1, h);
+                    } else if (at.getRow() > h) {
+                        scroll(1, h);
+                    }
+                    selCursor = locate(at.getColumn(), Math.max(0, Math.min(h - 1, at.getRow() - 1)));
+                }
+            }
+            case CLICK_RELEASE -> {
+                if (dragging) {
+                    dragging = false;
+                    if (selecting()) {
+                        copySelection();
+                    }
+                }
+            }
+            default -> { }
+        }
+    }
+
+    /**
+     * The place under screen column {@code x} of body row {@code row} (0 = first row below the header); below the last
+     * line it is the end of that line. Mirrors {@link #drawText}: the gutter and the indent of wrapped rows are not text.
+     */
+    private Spot locate(int x, int row) throws IOException {
+        int width = Math.max(1, screen.getTerminalSize().getColumns() - textX);
+        long size = textWindow.size();
+        long pos = textTop;
+        int y = 0;
+        boolean firstLine = true;
+        Spot last = null;
+        while (pos < size) {
+            LineReader.Line line = reader.read(pos);
+            String text = Draw.expand(line.text());
+            if (wrap) {
+                int[] starts = rowStarts(text, width);
+                int indent = indentOf(text, width);
+                for (int r = firstLine ? Math.min(textRow, starts.length - 1) : 0; r < starts.length; r++, y++) {
+                    if (y == row) {
+                        int length = Wrap.end(starts, r, text.length()) - starts[r];
+                        return new Spot(line.start(), starts[r] + Math.max(0, Math.min(x - textX - (r > 0 ? indent : 0), length)));
+                    }
+                }
+            } else {
+                if (y == row) {
+                    return new Spot(line.start(), Math.min(text.length(), hscroll + Math.max(0, x - textX)));
+                }
+                y++;
+            }
+            last = new Spot(line.start(), text.length());
+            pos = line.next();
+            firstLine = false;
+        }
+        return last;
+    }
+
+    /** The selected text as it is in the file (tabs kept); null when it is longer than {@link #MAX_COPY} characters. */
+    private String selectedText() throws IOException {
+        Spot a = selStart();
+        Spot b = selEnd();
+        StringBuilder sb = new StringBuilder();
+        long pos = a.line();
+        while (pos < textWindow.size()) {
+            LineReader.Line line = reader.read(pos);
+            String raw = line.text();
+            int from = pos == a.line() ? a.col() : 0;
+            int to = pos == b.line() ? b.col() : Integer.MAX_VALUE;
+            sb.append(raw, Draw.original(raw, from, false), Draw.original(raw, to, true));
+            if (pos == b.line()) {
+                break;
+            }
+            if (textWindow.at(line.next() - 1) == '\n') {
+                sb.append('\n');
+            }
+            if (sb.length() > MAX_COPY) {
+                return null;
+            }
+            pos = line.next();
+        }
+        return sb.length() > MAX_COPY ? null : sb.toString();
+    }
+
+    private void copySelection() throws IOException {
+        if (!selecting()) {
+            message = "Nothing selected: drag with the mouse";
+            return;
+        }
+        String text = selectedText();
+        if (text == null) {
+            message = "Selection is too large to copy";
+        } else {
+            message = clipboard.test(text) ? "Copied " + text.length() + " characters" : "No clipboard tool available";
+        }
+    }
+
     // ---- drawing ----
 
     private void draw() {
@@ -962,21 +1130,43 @@ public final class FileView implements Closeable {
             Draw.Expanded shown = Draw.expand(line.text(), from, to);
             String text = shown.text();
             byte[] cs = TextStyle.expand(line.text(), lineStyles(line.text(), line.start()), text);
+            int selFrom = -1;
+            int selTo = -1;
+            boolean selBreak = false;
+            if (selecting()) {
+                Spot a = selStart();
+                Spot b = selEnd();
+                if (line.start() >= a.line() && line.start() <= b.line()) {
+                    selFrom = line.start() == a.line() ? Math.min(a.col(), text.length()) : 0;
+                    selTo = line.start() == b.line() ? Math.min(b.col(), text.length()) : text.length();
+                    selBreak = line.start() < b.line();
+                }
+            }
             if (wrap) {
-                int[] starts = Wrap.rows(text, width);
+                int[] starts = rowStarts(text, width);
+                int indent = indentOf(text, width);
                 int row = firstLine ? Math.min(textRow, starts.length - 1) : 0;
                 for (; row < starts.length && y < body; row++, y++) {
                     if (lineNumbers) {
                         drawGutter(g, y + 1, line.start(), row > 0);
                     }
-                    drawSlice(g, y + 1, text, cs, starts[row], Wrap.end(starts, row, text.length()), shown.from(), shown.to());
+                    int shift = row > 0 ? indent : 0;
+                    int end = Wrap.end(starts, row, text.length());
+                    drawSlice(g, y + 1, text, cs, starts[row], end, shift, shown.from(), shown.to(), selFrom, selTo);
+                    if (selBreak && row == starts.length - 1) {
+                        selectedBreak(g, y + 1, shift + end - starts[row], w);
+                    }
                 }
             } else {
                 if (lineNumbers) {
                     drawGutter(g, y + 1, line.start(), false);
                 }
                 int start = Math.min(hscroll, text.length());
-                drawSlice(g, y + 1, text, cs, start, Math.min(text.length(), hscroll + width), shown.from(), shown.to());
+                int end = Math.min(text.length(), hscroll + width);
+                drawSlice(g, y + 1, text, cs, start, end, 0, shown.from(), shown.to(), selFrom, selTo);
+                if (selBreak && hscroll <= text.length()) {
+                    selectedBreak(g, y + 1, end - start, w);
+                }
                 y++;
             }
             pos = line.next();
@@ -1034,25 +1224,35 @@ public final class FileView implements Closeable {
     }
 
     /**
-     * Draws {@code text[start, end)} at the text column; {@code [from, to)} (when {@code from >= 0}) is highlighted.
+     * Draws {@code text[start, end)} {@code indent} columns right of the text column. {@code [from, to)} is the search
+     * match and {@code [selFrom, selTo)} the selection; a range is unused when it is empty or starts below 0.
      * {@code styled} gives the style of every character, or is null for plain text.
      */
-    private void drawSlice(TextGraphics g, int y, String text, byte[] styled, int start, int end, int from, int to) {
+    private void drawSlice(TextGraphics g, int y, String text, byte[] styled, int start, int end, int indent,
+                           int from, int to, int selFrom, int selTo) {
         if (end <= start) {
             return;
         }
-        int hl0 = Math.max(start, Math.min(from, end));
-        int hl1 = Math.max(start, Math.min(to, end));
-        boolean highlight = from >= 0 && hl1 > hl0;
-        piece(g, y, text, styled, start, highlight ? hl0 : end, theme.appBackground(), start);
-        if (highlight) {
-            piece(g, y, text, styled, hl0, hl1, theme.match(), start);
-            piece(g, y, text, styled, hl1, end, theme.appBackground(), start);
+        int[] cuts = {start, Math.max(start, Math.min(from, end)), Math.max(start, Math.min(to, end)),
+                Math.max(start, Math.min(selFrom, end)), Math.max(start, Math.min(selTo, end)), end};
+        Arrays.sort(cuts);
+        for (int i = 0; i + 1 < cuts.length; i++) {
+            int a = cuts[i];
+            int b = cuts[i + 1];
+            if (b > a) {
+                TextColor bg = a >= selFrom && b <= selTo ? theme.selection()
+                        : a >= from && b <= to ? theme.match() : theme.appBackground();
+                Draw.runs(g, theme, textX + indent + a - start, y, text, styled, a, b, bg);
+            }
         }
     }
 
-    private void piece(TextGraphics g, int y, String text, byte[] styled, int from, int to, TextColor bg, int origin) {
-        Draw.runs(g, theme, textX + from - origin, y, text, styled, from, to, bg);
+    /** The cell after the text of a line the selection runs on past, so the selected line break shows. */
+    private void selectedBreak(TextGraphics g, int y, int offset, int w) {
+        int x = textX + offset;
+        if (x < w) {
+            Draw.cell(g, x, y, 1, " ", theme.text(), theme.selection());
+        }
     }
 
     private void drawHex(TextGraphics g, int w, int h) throws IOException {

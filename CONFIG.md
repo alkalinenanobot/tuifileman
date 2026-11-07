@@ -76,6 +76,8 @@ options of a command.
 | Java property | `-Dtfm.threads=N` | Number of threads for parallel copy, delete and scans, instead of the automatic choice per drive type (`--threads` sets the same). |
 | Environment | `PATH` | Where the external tools above (`chafa`, Poppler, FFmpeg, mpv, shells) are looked up when a setting holds only a name. On Windows, a tool not found there is also looked up in the `PATH` stored in the registry and, for mpv, in the `MPV Player` / `mpv` folders under Program Files and `%LOCALAPPDATA%\Programs`. |
 
-Other files the program keeps next to `config.ini`: `bookmarks.txt` (`Ctrl+D`) and `run-history.txt` (the Run
-command dialog). On Windows the JNA library is unpacked to `%LOCALAPPDATA%\tuifileman\native\jnidispatch.dll` at
-first start.
+Other files the program keeps next to `config.ini`: `bookmarks.txt` (`Ctrl+D`), `run-history.txt` (the Run
+command dialog) and `last-dirs.txt` (the folders of the left and right panel, written on every change; a start
+without folder arguments opens them, and a folder that no longer exists falls back to the current folder; a panel
+inside an archive is remembered as the folder of the archive). On Windows the JNA library is unpacked to
+`%LOCALAPPDATA%\tuifileman\native\jnidispatch.dll` at first start.

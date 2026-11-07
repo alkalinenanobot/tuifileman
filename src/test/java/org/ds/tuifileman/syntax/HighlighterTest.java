@@ -37,7 +37,7 @@ class HighlighterTest {
     }
 
     @Test
-    void anEscapedQuoteAndCommentMarkersInsideAStringStayInTheString() {
+    void quotesInStringsAndCharLiteralsAndCommentMarkersInsideAStringDoNotConfuseTheScanner() {
         String line = "String s = \"a \\\" b // not a comment\"; // real comment";
         byte[] styles = scan(java(), line)[0];
         assertEquals(TextStyle.STRING, roleAt(line, styles, "\"a"));
@@ -45,19 +45,16 @@ class HighlighterTest {
         assertEquals(TextStyle.STRING, roleAt(line, styles, "comment\";"));
         assertEquals(TextStyle.COMMENT, roleAt(line, styles, "// real"));
         assertEquals(TextStyle.COMMENT, roleAt(line, styles, "real comment"));
+
+        String chars = "char c = '\"'; int x = 1; // done";
+        byte[] charStyles = scan(java(), chars)[0];
+        assertEquals(TextStyle.STRING, roleAt(chars, charStyles, "'\"'"), "a quote in a char literal does not open a string");
+        assertEquals(TextStyle.NUMBER, roleAt(chars, charStyles, "1;"));
+        assertEquals(TextStyle.COMMENT, roleAt(chars, charStyles, "// done"));
     }
 
     @Test
-    void aQuoteInACharLiteralDoesNotOpenAString() {
-        String line = "char c = '\"'; int x = 1; // done";
-        byte[] styles = scan(java(), line)[0];
-        assertEquals(TextStyle.STRING, roleAt(line, styles, "'\"'"));
-        assertEquals(TextStyle.NUMBER, roleAt(line, styles, "1;"));
-        assertEquals(TextStyle.COMMENT, roleAt(line, styles, "// done"));
-    }
-
-    @Test
-    void aTextBlockAndABlockCommentCarryTheirStateAcrossLines() {
+    void aTextBlockAndABlockCommentCarryTheirStateAcrossLinesEvenThroughAnEmptyLine() {
         String[] lines = {
                 "String t = \"\"\"",
                 "  text \" block // not a comment",
@@ -72,14 +69,11 @@ class HighlighterTest {
         assertEquals(TextStyle.COMMENT, roleAt(lines[3], s[3], "line"));
         assertEquals(TextStyle.TYPE, roleAt(lines[3], s[3], "int"));
         assertEquals(TextStyle.TYPE, roleAt(lines[4], s[4], "int"), "colouring is back to normal after the comment");
-    }
 
-    @Test
-    void anEmptyLineInsideABlockKeepsTheState() {
-        String[] lines = {"/* open", "", "still comment */ int z;"};
-        byte[][] s = scan(java(), lines);
-        assertEquals(TextStyle.COMMENT, roleAt(lines[2], s[2], "still"));
-        assertEquals(TextStyle.TYPE, roleAt(lines[2], s[2], "int"));
+        String[] withBlank = {"/* open", "", "still comment */ int z;"};
+        byte[][] blank = scan(java(), withBlank);
+        assertEquals(TextStyle.COMMENT, roleAt(withBlank[2], blank[2], "still"));
+        assertEquals(TextStyle.TYPE, roleAt(withBlank[2], blank[2], "int"));
     }
 
     @Test
@@ -142,7 +136,7 @@ class HighlighterTest {
     }
 
     @Test
-    void documentSkipsABomAndWorksInSingleByteCharsets() {
+    void documentSkipsABomAndWorksInSingleByteCharsetsAndWithoutALastNewline() {
         byte[] bom = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF, '/', '/', ' ', 'x'};
         byte[] styles = java().document(bom, 3, StandardCharsets.UTF_8);
         assertEquals(0, styles[0]);
@@ -154,6 +148,11 @@ class HighlighterTest {
         byte[] colours = java().document(data, 0, latin);
         assertNotNull(colours);
         assertEquals(TextStyle.COMMENT, colours[data.length - 2] & TextStyle.ROLE_MASK, "the accented letter is one byte");
+
+        byte[] unterminated = "\n\nint a".getBytes(StandardCharsets.UTF_8);
+        byte[] plain = java().document(unterminated, 0, StandardCharsets.UTF_8);
+        assertEquals(TextStyle.TYPE, plain[2] & TextStyle.ROLE_MASK, "the last line needs no newline");
+        assertArrayEquals(new byte[] {0, 0}, new byte[] {plain[0], plain[1]});
     }
 
     @Test
@@ -161,14 +160,6 @@ class HighlighterTest {
         byte[] bad = {'/', '/', ' ', (byte) 0xE9, '\n'};
         assertNull(java().document(bad, 0, StandardCharsets.UTF_8));
         assertNull(java().document("// x".getBytes(StandardCharsets.UTF_16LE), 0, StandardCharsets.UTF_16LE));
-    }
-
-    @Test
-    void documentWithoutALastNewlineAndBlankLines() {
-        byte[] data = "\n\nint a".getBytes(StandardCharsets.UTF_8);
-        byte[] styles = java().document(data, 0, StandardCharsets.UTF_8);
-        assertEquals(TextStyle.TYPE, styles[2] & TextStyle.ROLE_MASK);
-        assertArrayEquals(new byte[] {0, 0}, new byte[] {styles[0], styles[1]});
     }
 
     @Test

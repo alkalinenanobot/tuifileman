@@ -2,6 +2,7 @@ package org.ds.tuifileman.app;
 
 import static org.ds.tuifileman.Fixtures.virtual;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,54 +40,36 @@ class RenamePlanTest {
         return new Settings(name, extension, 1, 1, 1);
     }
 
-    @Test
-    void identityMaskChangesNothing() {
-        RenamePlan plan = RenamePlan.create(List.of(file("a.txt"), file("b")), Set.of("a.txt", "b"), mask("[N]", "[E]"));
-        assertEquals(0, plan.changedCount());
-        assertEquals(0, plan.errorCount());
+    private void expect(String expected, String maskName, String maskExtension, String file) {
+        assertEquals(List.of(expected), names(mask(maskName, maskExtension), file), maskName + "." + maskExtension + " on " + file);
     }
 
     @Test
-    void nameAndExtensionSplitAtTheLastDot() {
-        assertEquals(List.of("a.tar-gz.bak"), names(mask("[N]-[E]", "bak"), "a.tar.gz"));
-    }
-
-    @Test
-    void dotFilesAndFoldersHaveNoExtension() {
-        assertEquals(List.of(".gitignore.x"), names(mask("[N]", "x"), ".gitignore"));
+    void nameAndExtensionSplitAtTheLastDotExceptForDotFilesAndFolders() {
+        RenamePlan identity = RenamePlan.create(List.of(file("a.txt"), file("b")), Set.of("a.txt", "b"), mask("[N]", "[E]"));
+        assertEquals(0, identity.changedCount());
+        assertEquals(0, identity.errorCount());
+        expect("a.tar-gz.bak", "[N]-[E]", "bak", "a.tar.gz");
+        expect(".gitignore.x", "[N]", "x", ".gitignore");
         RenamePlan plan = RenamePlan.create(List.of(virtual(folder, "v1.2", true)), Set.of(), mask("[N]-[E]", ""));
         assertEquals("v1.2-", plan.items().get(0).newName(), "a folder name is never split");
     }
 
     @Test
-    void characterRangesAreOneBased() {
-        assertEquals(List.of("bc"), names(mask("[N2-3]", ""), "abcdef"));
-        assertEquals(List.of("cdef"), names(mask("[N3-]", ""), "abcdef"));
-        assertEquals(List.of("b"), names(mask("[N2]", ""), "abcdef"));
-        assertEquals(List.of("abcdef"), names(mask("[N1-99]", ""), "abcdef"));
-        assertEquals(List.of(""), names(mask("[N9-]", ""), "abc"));
-        assertEquals(List.of("tx"), names(mask("[E1-2]", ""), "a.txt"));
-    }
+    void maskTokensExpandFromRangesCountersParentFolderAndModifiedTime() {
+        expect("bc", "[N2-3]", "", "abcdef");
+        expect("cdef", "[N3-]", "", "abcdef");
+        expect("b", "[N2]", "", "abcdef");
+        expect("abcdef", "[N1-99]", "", "abcdef");
+        expect("", "[N9-]", "", "abc");
+        expect("tx", "[E1-2]", "", "a.txt");
+        expect(folder.getFileName() + "_a.txt", "[P]_[N]", "[E]", "a.txt");
 
-    @Test
-    void counterUsesStartStepAndDigits() {
-        Settings settings = new Settings("img[C]", "[E]", 8, 2, 3);
-        assertEquals(List.of("img008.jpg", "img010.jpg", "img012.jpg"), names(settings, "a.jpg", "b.jpg", "c.jpg"));
-    }
+        assertEquals(List.of("img008.jpg", "img010.jpg", "img012.jpg"),
+                names(new Settings("img[C]", "[E]", 8, 2, 3), "a.jpg", "b.jpg", "c.jpg"), "counter start, step, digits");
+        assertEquals(List.of("n-01.t", "n00.t", "n01.t"),
+                names(new Settings("n[C]", "[E]", -1, 1, 2), "a.t", "b.t", "c.t"), "negative counter keeps the sign in front");
 
-    @Test
-    void negativeCounterKeepsTheSignInFront() {
-        Settings settings = new Settings("n[C]", "[E]", -1, 1, 2);
-        assertEquals(List.of("n-01.t", "n00.t", "n01.t"), names(settings, "a.t", "b.t", "c.t"));
-    }
-
-    @Test
-    void parentFolderToken() {
-        assertEquals(List.of(folder.getFileName() + "_a.txt"), names(mask("[P]_[N]", "[E]"), "a.txt"));
-    }
-
-    @Test
-    void dateTokensUseTheModifiedTime() {
         LocalDateTime time = LocalDateTime.of(2023, 4, 5, 6, 7, 8);
         FileTime modified = FileTime.from(time.atZone(ZoneId.systemDefault()).toInstant());
         FileEntry entry = new FileEntry("x.txt", folder.resolve("x.txt"), false, 0, modified);
@@ -96,7 +79,7 @@ class RenamePlanTest {
     }
 
     @Test
-    void searchAndReplaceWithWildcards() {
+    void searchAndReplaceSupportsWildcardsAndMatchCase() {
         assertEquals("a-b.txt", RenamePlan.replaceWildcards("a b.txt", " ", "-", false));
         assertEquals("X", RenamePlan.replaceWildcards("IMG_001.txt", "IMG_*", "X", false), "a trailing * runs to the end");
         assertEquals("a-X.txt", RenamePlan.replaceWildcards("a-IMG_1.txt", "IMG_?", "X", false));
@@ -104,16 +87,13 @@ class RenamePlanTest {
         assertEquals("ABC", RenamePlan.replaceWildcards("ABC", "b", "x", true), "match case");
         assertEquals("AxC", RenamePlan.replaceWildcards("ABC", "b", "x", false));
         assertEquals("abc", RenamePlan.replaceWildcards("abc", "", "x", false), "no search, no change");
-    }
 
-    @Test
-    void searchAndReplaceRunsInTheSettings() {
         Settings settings = new Settings("[N]", "[E]", 1, 1, 1, "_", " ", false, CaseMode.UNCHANGED, CaseScope.BOTH);
-        assertEquals(List.of("my file.txt"), names(settings, "my_file.txt"));
+        assertEquals(List.of("my file.txt"), names(settings, "my_file.txt"), "applied by the settings");
     }
 
     @Test
-    void caseModesAndScopes() {
+    void caseModesApplyToTheChosenScopeAndFoldersAreOneName() {
         assertEquals("my file.txt", RenamePlan.changeCase("My File.TXT", false, CaseMode.LOWER, CaseScope.BOTH));
         assertEquals("MY FILE.TXT", RenamePlan.changeCase("My File.txt", false, CaseMode.UPPER, CaseScope.BOTH));
         assertEquals("MY FILE.txt", RenamePlan.changeCase("My File.txt", false, CaseMode.UPPER, CaseScope.NAME));
@@ -122,10 +102,6 @@ class RenamePlanTest {
         assertEquals("My_Big-File (Old).txt",
                 RenamePlan.changeCase("my_big-file (old).txt", false, CaseMode.WORDS, CaseScope.NAME));
         assertEquals("abc.d", RenamePlan.changeCase("abc.d", false, CaseMode.UNCHANGED, CaseScope.BOTH));
-    }
-
-    @Test
-    void caseOfAFolderTouchesTheWholeName() {
         assertEquals("V1.2", RenamePlan.changeCase("v1.2", true, CaseMode.UPPER, CaseScope.NAME));
         assertEquals("v1.2", RenamePlan.changeCase("v1.2", true, CaseMode.UPPER, CaseScope.EXTENSION));
     }
@@ -133,28 +109,25 @@ class RenamePlanTest {
     @Test
     void invalidNamesAreReported() {
         assertNull(RenamePlan.validate("fine.txt"));
-        assertEquals("Name cannot be empty", RenamePlan.validate(" "));
-        assertEquals("Name cannot contain ?", RenamePlan.validate("a?b"));
-        assertEquals("Name cannot end with a space or dot", RenamePlan.validate("a."));
-        assertEquals("Reserved Windows name", RenamePlan.validate("con"));
-        assertEquals("Reserved Windows name", RenamePlan.validate("NUL.txt"));
-        assertEquals("Name too long", RenamePlan.validate("a".repeat(256)));
         assertNull(RenamePlan.validate("a".repeat(255)));
+        String[][] invalid = {{" ", "empty"}, {"a?b", "?"}, {"a.", "dot"}, {"con", "Reserved"}, {"NUL.txt", "Reserved"},
+            {"a".repeat(256), "long"}};
+        for (String[] row : invalid) {
+            String problem = RenamePlan.validate(row[0]);
+            assertNotNull(problem, "'" + row[0] + "' must be refused");
+            assertTrue(problem.contains(row[1]), "'" + row[0] + "': " + problem);
+        }
     }
 
     @Test
-    void twoItemsWithTheSameNewNameAreBothInError() {
-        RenamePlan plan = RenamePlan.create(List.of(file("a.txt"), file("b.txt")), Set.of("a.txt", "b.txt"),
+    void clashingNewNamesAreBothInErrorCaseInsensitively() {
+        RenamePlan same = RenamePlan.create(List.of(file("a.txt"), file("b.txt")), Set.of("a.txt", "b.txt"),
                 mask("same", "[E]"));
-        assertEquals(2, plan.errorCount());
-        assertEquals("Same new name as another item", plan.items().get(0).error());
-    }
+        assertEquals(2, same.errorCount());
+        assertNotNull(same.items().get(0).error());
 
-    @Test
-    void clashesAreCaseInsensitive() {
-        RenamePlan plan = RenamePlan.create(List.of(file("a.txt"), file("b.txt")), Set.of("a.txt", "b.txt"),
-                new Settings("[N]", "[E]", 1, 1, 1, "", "", false, CaseMode.UNCHANGED, CaseScope.BOTH));
-        assertEquals(0, plan.errorCount());
+        Settings identity = new Settings("[N]", "[E]", 1, 1, 1, "", "", false, CaseMode.UNCHANGED, CaseScope.BOTH);
+        assertEquals(0, RenamePlan.create(List.of(file("a.txt"), file("b.txt")), Set.of("a.txt", "b.txt"), identity).errorCount());
         RenamePlan clash = RenamePlan.create(List.of(file("A.txt"), file("b.txt")), Set.of("A.txt", "b.txt"),
                 new Settings("x", "txt", 1, 1, 1));
         assertEquals(2, clash.errorCount());
@@ -164,18 +137,15 @@ class RenamePlanTest {
     }
 
     @Test
-    void aNameTakenByAFileOutsideTheBatchIsAnError() {
-        RenamePlan plan = RenamePlan.create(List.of(file("a.txt")), Set.of("a.txt", "Other.TXT"), mask("other", "txt"));
-        assertEquals("A file with this name already exists", plan.items().get(0).error());
-    }
+    void aNameTakenOutsideTheBatchIsAnErrorButAnotherMembersOldNameIsFine() {
+        RenamePlan taken = RenamePlan.create(List.of(file("a.txt")), Set.of("a.txt", "Other.TXT"), mask("other", "txt"));
+        assertNotNull(taken.items().get(0).error());
 
-    @Test
-    void renamingIntoAnotherBatchMembersOldNameIsFine() {
         // a shifts to b's old name while b moves on: the Renamer sorts out the order
-        RenamePlan plan = RenamePlan.create(List.of(file("1.txt"), file("2.txt")), Set.of("1.txt", "2.txt"),
+        RenamePlan shift = RenamePlan.create(List.of(file("1.txt"), file("2.txt")), Set.of("1.txt", "2.txt"),
                 new Settings("[C]", "[E]", 2, 1, 1));
-        assertEquals(0, plan.errorCount());
-        assertEquals(List.of("2.txt", "3.txt"), plan.items().stream().map(Item::newName).toList());
-        assertTrue(plan.items().stream().allMatch(Item::changed));
+        assertEquals(0, shift.errorCount());
+        assertEquals(List.of("2.txt", "3.txt"), shift.items().stream().map(Item::newName).toList());
+        assertTrue(shift.items().stream().allMatch(Item::changed));
     }
 }

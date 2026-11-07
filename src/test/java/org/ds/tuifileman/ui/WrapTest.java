@@ -23,6 +23,29 @@ class WrapTest {
     }
 
     @Test
+    void hangingIndentFollowsLeadingSpacesAndAListMarker() {
+        assertEquals(0, Wrap.hangingIndent("plain text"));
+        assertEquals(4, Wrap.hangingIndent("    code"));
+        assertEquals(2, Wrap.hangingIndent("- item"));
+        assertEquals(2, Wrap.hangingIndent("\u2022 item"));
+        assertEquals(4, Wrap.hangingIndent("  * item"));
+        assertEquals(4, Wrap.hangingIndent("12. item"));
+        assertEquals(3, Wrap.hangingIndent("3) item"));
+        assertEquals(0, Wrap.hangingIndent("-not a list"));
+        assertEquals(0, Wrap.hangingIndent("2024-01-01 log line"));
+        assertEquals(0, Wrap.hangingIndent("1.5 is a number"));
+    }
+
+    @Test
+    void continuationRowsAreNarrowerByTheIndentWhichIsCappedAtHalfTheWidth() {
+        // "- aaa bbb ccc ddd eee": the first row holds 8 columns, the continuations 6.
+        assertArrayEquals(new int[] {0, 6, 10, 14, 18}, Wrap.rows("- aaa bbb ccc ddd eee", 8, 2));
+        assertArrayEquals(new int[] {0, 4, 6, 8}, Wrap.rows("abcdefghij", 4, 99));
+        assertEquals(2, Wrap.shift(2, 8));
+        assertEquals(4, Wrap.shift(99, 8));
+    }
+
+    @Test
     void everyRowFitsAndNothingIsLost() {
         Random random = new Random(7);
         for (int round = 0; round < 2000; round++) {

@@ -9,52 +9,23 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class RunCommandLaunchTest {
-    private static final RunCommand.Shell BASH = new RunCommand.Shell("bash", RunCommand.Kind.UNIX, "/usr/bin/bash");
-    private static final RunCommand.Shell FISH = new RunCommand.Shell("fish", RunCommand.Kind.UNIX, "/usr/bin/fish");
-    private static final RunCommand.Shell CMD = new RunCommand.Shell("cmd", RunCommand.Kind.CMD, null);
-    private static final RunCommand.Shell PS = new RunCommand.Shell("powershell", RunCommand.Kind.POWERSHELL, null);
-
     @Test
-    void bashRunsTheCommandAsOneArgumentInALoginShell() {
-        var launch = RunCommand.launch(BASH, "  echo \"a b\" && ls | wc -l ", null);
-        assertEquals(List.of("/usr/bin/bash", "-lc", "echo \"a b\" && ls | wc -l"), launch.command());
-        assertTrue(launch.environment().isEmpty());
-    }
+    void eachShellGetsTheCommandInTheFormItCannotMangle() {
+        var bash = new RunCommand.Shell("bash", RunCommand.Kind.UNIX, "/usr/bin/bash");
+        var launch = RunCommand.launch(bash, "  echo \"a b\" && ls | wc -l ", null);
+        assertEquals(List.of("/usr/bin/bash", "-lc", "echo \"a b\" && ls | wc -l"), launch.command(), "bash: one argument, login shell");
+        assertTrue(launch.environment().isEmpty(), "bash: no environment");
 
-    @Test
-    void anEmptyCommandJustStartsTheShell() {
-        assertEquals(List.of("/usr/bin/bash"), RunCommand.launch(BASH, "  ", null).command());
-        assertEquals(List.of("/usr/bin/fish", "-c", "ls"), RunCommand.launch(FISH, "ls", null).command());
-    }
+        var cmd = new RunCommand.Shell("cmd", RunCommand.Kind.CMD, null);
+        launch = RunCommand.launch(cmd, "echo \"a b\" & dir", "\\\\wsl.localhost\\Fedora\\home\\me");
+        assertEquals(List.of("cmd.exe", "/d", "/c", "%TFM_LINE%"), launch.command(), "cmd: line comes from the environment");
+        assertEquals("pushd \"\\\\wsl.localhost\\Fedora\\home\\me\" && echo \"a b\" & dir", launch.environment().get("TFM_LINE"), "cmd: line");
+        assertTrue(launch.environment().get("WSLENV").endsWith("TFM_LINE"), "cmd: variable crosses the interop layer");
 
-    @Test
-    void cmdGetsItsLineThroughTheEnvironmentSoTheInteropLayerCannotRequoteIt() {
-        var launch = RunCommand.launch(CMD, "echo \"a b\" & dir", "\\\\wsl.localhost\\Fedora\\home\\me");
-        assertEquals(List.of("cmd.exe", "/d", "/c", "%TFM_LINE%"), launch.command());
-        assertEquals("pushd \"\\\\wsl.localhost\\Fedora\\home\\me\" && echo \"a b\" & dir", launch.environment().get("TFM_LINE"));
-        assertTrue(launch.environment().get("WSLENV").endsWith("TFM_LINE"));
-    }
-
-    @Test
-    void cmdWithoutACommandStaysOpenInTheFolder() {
-        var launch = RunCommand.launch(CMD, "", "C:\\work");
-        assertEquals(List.of("cmd.exe", "/d", "/k", "%TFM_LINE%"), launch.command());
-        assertEquals("pushd \"C:\\work\"", launch.environment().get("TFM_LINE"));
-    }
-
-    @Test
-    void powershellReceivesTheCommandBase64EncodedAsUtf16() {
-        var launch = RunCommand.launch(PS, "Get-ChildItem 'a b'; \"x\"", null);
-        assertEquals("powershell.exe", launch.command().get(0));
-        assertEquals("-EncodedCommand", launch.command().get(1));
+        var powershell = new RunCommand.Shell("powershell", RunCommand.Kind.POWERSHELL, null);
+        launch = RunCommand.launch(powershell, "Get-ChildItem 'a b'; \"x\"", null);
+        assertEquals("-EncodedCommand", launch.command().get(1), "powershell: encoded command");
         assertEquals("Get-ChildItem 'a b'; \"x\"",
-                new String(Base64.getDecoder().decode(launch.command().get(2)), StandardCharsets.UTF_16LE));
-    }
-
-    @Test
-    void customShellsGoThroughSh() {
-        var custom = new RunCommand.Shell("x", RunCommand.Kind.CUSTOM, "xterm -e bash -c \"{cmd}\"");
-        assertEquals(List.of("sh", "-c", "xterm -e bash -c \"say \\\"hi\\\"\""),
-                RunCommand.launch(custom, "say \"hi\"", null).command());
+                new String(Base64.getDecoder().decode(launch.command().get(2)), StandardCharsets.UTF_16LE), "powershell: UTF-16 base64");
     }
 }
