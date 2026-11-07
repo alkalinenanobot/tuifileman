@@ -202,7 +202,9 @@ class SyncPlanTest {
                     }
                     Cmd.Result result = Cmd.run(arguments.toArray(String[]::new));
                     assertEquals(4, result.exit(), command + " " + rules + ": " + result.err());
-                    assertTrue(result.err().contains(rules.toString()), result.err());
+                    // the name only: the program reports real paths, a temp folder may be given in 8.3 form
+                    assertTrue(result.err().contains("cannot read ignore file")
+                            && result.err().contains(rules.getFileName().toString()), result.err());
                 }
             }
         }
