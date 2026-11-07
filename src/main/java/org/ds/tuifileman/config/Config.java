@@ -1,6 +1,7 @@
 package org.ds.tuifileman.config;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -8,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.ds.tuifileman.fs.AtomicFile;
 
 /**
  * Human-editable settings in INI style: {@code [section]} headers, {@code key = value} lines and
@@ -146,7 +148,7 @@ public final class Config {
             if (create) {
                 try {
                     Files.createDirectories(file.getParent());
-                    Files.writeString(file, DEFAULT_TEXT.replace("\n", System.lineSeparator()));
+                    AtomicFile.write(file, DEFAULT_TEXT.replace("\n", System.lineSeparator()).getBytes(StandardCharsets.UTF_8));
                 } catch (IOException e) {
                     config.warnings.add("cannot create " + file + ": " + e.getMessage());
                 }
@@ -279,6 +281,9 @@ public final class Config {
         String name = key.substring(dot + 1);
         try {
             List<String> lines = Files.exists(file) ? new ArrayList<>(Files.readAllLines(file)) : new ArrayList<>();
+            if (!lines.isEmpty() && lines.get(0).startsWith("\uFEFF")) {
+                lines.set(0, lines.get(0).substring(1));
+            }
             String current = "";
             int sectionStart = -1;
             int lastInSection = -1;
@@ -315,7 +320,7 @@ public final class Config {
                 lines.add(entry);
             }
             Files.createDirectories(file.getParent());
-            Files.write(file, lines);
+            AtomicFile.writeLines(file, lines, StandardCharsets.UTF_8);
             return null;
         } catch (IOException | RuntimeException e) {
             return "cannot save " + file + ": " + e.getMessage();

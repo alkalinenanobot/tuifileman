@@ -2,12 +2,18 @@ package org.ds.tuifileman.ignore;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import org.ds.tuifileman.fs.Entries;
 import org.eclipse.jgit.ignore.FastIgnoreRule;
 import org.eclipse.jgit.ignore.IgnoreNode;
 
@@ -89,8 +95,12 @@ final class GitIgnoreMatcher implements IgnoreMatcher {
         String childDir = dir.isEmpty() ? name : dir + "/" + name;
         Scope child = scope;
         if (nested) {
-            child = push(scope, childDir, leftDir == null ? null : load(leftDir, ignoreCase),
-                    rightDir == null ? null : load(rightDir, ignoreCase));
+            try {
+                child = push(scope, childDir, leftDir == null ? null : load(leftDir, ignoreCase),
+                        rightDir == null ? null : load(rightDir, ignoreCase));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e.getMessage(), e);
+            }
         }
         return child == null && !nested ? NONE : new GitIgnoreMatcher(child, childDir, nested, ignoreCase);
     }
@@ -100,20 +110,33 @@ final class GitIgnoreMatcher implements IgnoreMatcher {
     }
 
     /** The rules of the {@code .gitignore} in {@code folder}, or null when it has none. */
-    private static IgnoreNode load(Path folder, boolean ignoreCase) {
+    private static IgnoreNode load(Path folder, boolean ignoreCase) throws IOException {
         Path file = folder.resolve(".gitignore");
-        if (!Files.isRegularFile(file)) {
-            return null;
-        }
         try {
-            return node(lines(file), ignoreCase);
-        } catch (IOException e) {
+            // not Files.isRegularFile: it answers false for a file whose attributes cannot be read
+            if (!Files.readAttributes(file, BasicFileAttributes.class).isRegularFile()) {
+                return null;
+            }
+        } catch (NoSuchFileException e) {
             return null;
+        } catch (IOException e) {
+            throw new IOException("cannot read ignore file " + file + ": " + (e instanceof AccessDeniedException
+                    ? "access denied" : Entries.message(e)), e);
         }
+        return node(lines(file), ignoreCase);
     }
 
+    /** The lines of an ignore file; a file that cannot be read stops the run, naming the file and the reason. */
     private static List<String> lines(Path file) throws IOException {
-        String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        String text;
+        try {
+            text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            String reason = e instanceof AccessDeniedException ? "access denied"
+                    : e instanceof FileSystemException f && f.getReason() != null ? f.getReason()
+                    : Entries.message(e);
+            throw new IOException("cannot read ignore file " + file + ": " + reason, e);
+        }
         if (text.startsWith("\uFEFF")) {
             text = text.substring(1);
         }

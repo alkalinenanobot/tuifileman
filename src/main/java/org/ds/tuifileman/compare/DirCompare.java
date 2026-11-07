@@ -5,6 +5,7 @@ import org.ds.tuifileman.fs.Parallel;
 import org.ds.tuifileman.ignore.IgnoreMatcher;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -25,6 +26,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -193,11 +195,14 @@ public final class DirCompare {
                                   AtomicInteger ignored, Predicate<String> exclude, long toleranceMillis,
                                   Queue<Unreadable> unreadable, Consumer<Item> sink) throws IOException {
         Context context = new Context(recursive, contents, contents && contentVerdict, cancel, progress, ignored,
-                exclude, toleranceMillis, unreadable, sink);
+                exclude, toleranceMillis, unreadable, sink, new AtomicReference<>());
         ForkJoinPool pool = new ForkJoinPool(Parallel.threads(left, right));
         try {
             DirTask root = new DirTask(context, left, right, "", ignore);
             List<Item> items = pool.invoke(root);
+            if (context.fatal().get() != null) {
+                throw context.fatal().get();
+            }
             if (root.error != null) {
                 throw root.error;
             }
@@ -212,7 +217,8 @@ public final class DirCompare {
 
     private record Context(boolean recursive, boolean contents, boolean contentVerdict, AtomicBoolean cancel,
                            AtomicInteger progress, AtomicInteger ignored, Predicate<String> exclude,
-                           long toleranceMillis, Queue<Unreadable> unreadable, Consumer<Item> sink) { }
+                           long toleranceMillis, Queue<Unreadable> unreadable, Consumer<Item> sink,
+                           AtomicReference<IOException> fatal) { }
 
     /** Both sides of one name; {@code skip} marks links and unreadable entries (skipped on both sides). */
     private static final class Pair {
@@ -242,6 +248,9 @@ public final class DirCompare {
 
         @Override
         protected List<Item> compute() {
+            if (context.fatal().get() != null) {
+                return List.of();
+            }
             Map<String, Pair> leftNames;
             Map<String, Pair> rightNames;
             try {
@@ -254,10 +263,10 @@ public final class DirCompare {
             } catch (IOException e) {
                 return unreadable(right, e);
             }
-            TreeMap<String, Pair> names = merge(leftNames, rightNames);
+            TreeMap<String, Pair> names = merge(leftNames, rightNames, right);
             List<Object> slots = new ArrayList<>();
             for (var entry : names.entrySet()) {
-                if (context.cancel().get()) {
+                if (context.cancel().get() || context.fatal().get() != null) {
                     break;
                 }
                 context.progress().incrementAndGet();
@@ -347,8 +356,15 @@ public final class DirCompare {
 
         private DirTask child(String relative, Pair pair) {
             String name = relative.substring(prefix.length());
-            DirTask task = new DirTask(context, pair.path[0], pair.path[1], relative + "/",
-                    ignore.enter(name, pair.path[0], pair.path[1]));
+            IgnoreMatcher inner;
+            try {
+                inner = ignore.enter(name, pair.path[0], pair.path[1]);
+            } catch (UncheckedIOException e) {
+                // An unreadable .gitignore stops the whole scan: its rules would otherwise just vanish.
+                context.fatal().compareAndSet(null, e.getCause());
+                inner = IgnoreMatcher.NONE;
+            }
+            DirTask task = new DirTask(context, pair.path[0], pair.path[1], relative + "/", inner);
             task.fork();
             return task;
         }
@@ -474,15 +490,16 @@ public final class DirCompare {
         if (e instanceof NoSuchFileException) {
             return "no longer exists";
         }
-        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        return Entries.message(e);
     }
 
     /**
-     * Pairs the two sides by exact name. A name that differs only in letter case is still paired when it is
-     * unambiguous, one spelling per side ({@code Readme.txt} and {@code README.TXT} are one file on Windows);
-     * two spellings on one side ({@code Foo} and {@code foo} on Linux) are never merged.
+     * Pairs the two sides by exact name. A name that differs only in letter case is paired only when it is
+     * unambiguous (one spelling per side) and {@code rightDir} really treats the left spelling as the same
+     * file, as Windows does for {@code Readme.txt} and {@code README.TXT}; on a case-sensitive file system
+     * they are two files. Two spellings on one side ({@code Foo} and {@code foo} on Linux) are never merged.
      */
-    private static TreeMap<String, Pair> merge(Map<String, Pair> left, Map<String, Pair> right) {
+    private static TreeMap<String, Pair> merge(Map<String, Pair> left, Map<String, Pair> right, Path rightDir) {
         TreeMap<String, Pair> names = new TreeMap<>(ORDER);
         names.putAll(left);
         if (right.isEmpty()) {
@@ -494,10 +511,12 @@ public final class DirCompare {
             String name = entry.getKey();
             Pair pair = names.get(name);
             if (pair == null) {
-                // No exact match: pair a different spelling only when each side has just that one.
+                // No exact match: a different spelling pairs only when each side has just that one, and the
+                // right folder resolves the left spelling to an entry (the only check that touches the disk).
                 String folded = name.toLowerCase(Locale.ROOT);
                 String other = leftSpelling.get(folded);
-                if (other != null && name.equals(rightSpelling.get(folded))) {
+                if (other != null && name.equals(rightSpelling.get(folded))
+                        && Files.exists(rightDir.resolve(other), LinkOption.NOFOLLOW_LINKS)) {
                     pair = names.get(other);
                 }
             }
@@ -543,7 +562,9 @@ public final class DirCompare {
     /**
      * Builds the item of one relative path from the current state of both trees, to apply a stored plan.
      * {@code status} (nullable) stands in for the size/time comparison of two files, e.g. when the plan came
-     * from a content compare. Returns null when the path exists on neither side.
+     * from a content compare; only a verdict about two files (same, newer, different) is taken over. A
+     * one-sided, mismatch or ignored status describes a state that may be gone, so the current one is used.
+     * Returns null when the path exists on neither side.
      */
     public static Item itemFor(Path leftRoot, Path rightRoot, String relative, Status status) throws IOException {
         return itemFor(leftRoot, rightRoot, relative, status, TIME_TOLERANCE_MILLIS);
@@ -567,9 +588,17 @@ public final class DirCompare {
         } else if (ls.directory()) {
             computed = Status.SAME;
         } else {
-            computed = status != null ? status : byTime(ls, rs, false, toleranceMillis);
+            computed = isTrustedVerdict(status, ls, rs) ? status : byTime(ls, rs, false, toleranceMillis);
         }
         return new Item(relative, ls, rs, computed);
+    }
+
+    /**
+     * A plan's SAME and DIFFERENT may come from a content comparison, which a stat cannot redo, so they stand
+     * (SAME only while the sizes still match). Newer-side verdicts are recomputed from the current times.
+     */
+    private static boolean isTrustedVerdict(Status status, Side ls, Side rs) {
+        return status == Status.DIFFERENT || status == Status.SAME && ls.size() == rs.size();
     }
 
     private static Side stat(Path path) throws IOException {

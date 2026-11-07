@@ -6,9 +6,9 @@ import org.ds.tuifileman.fs.Entries;
 import org.ds.tuifileman.fs.Parallel;
 import org.ds.tuifileman.model.FileEntry;
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -57,6 +57,10 @@ public final class CopyJob implements Job {
     static final String APPEARED =
             "Target already exists (another name differing only in letter case, or created meanwhile)";
 
+    /** Windows and macOS file systems are case-insensitive by default: "A.txt" and "a.txt" are one target there. */
+    private static final boolean CASE_INSENSITIVE = System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
+            .matches(".*(win|mac).*");
+
     /** The newer-than check of "overwrite older" ignores differences up to this many milliseconds. */
     private long timeToleranceMillis = TimeTolerance.DEFAULT_MILLIS;
 
@@ -86,6 +90,8 @@ public final class CopyJob implements Job {
     private final Set<Path> reserved = new HashSet<>();
     private boolean[] incomplete;
     private int copyThreads;
+    private FileStore destinationStore;
+    private boolean destinationStoreKnown;
 
     public CopyJob(List<FileEntry> entries, Path destination, boolean move, ConflictResolver resolver) {
         this.sources = entries.stream().map(FileEntry::path).toList();
@@ -253,12 +259,16 @@ public final class CopyJob implements Job {
             }
             current = rename[0].getFileName().toString();
             try {
-                try {
+                if (rename[0].equals(rename[1])) {
+                    // only the letter case changes: one file under two spellings, which a plain move leaves alone
                     Files.move(rename[0], rename[1], StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException e) {
+                } else {
+                    // never replaces: a target that appeared after planning fails instead
                     Files.move(rename[0], rename[1]);
                 }
                 filesDone.incrementAndGet();
+            } catch (FileAlreadyExistsException e) {
+                errors.add(new Problem(rename[0].toString(), APPEARED + ": " + rename[1]));
             } catch (IOException e) {
                 fail(rename[0], e);
             }
@@ -280,19 +290,33 @@ public final class CopyJob implements Job {
         Queue<DirTask> foundDirs = new ConcurrentLinkedQueue<>();
         Queue<FileTask> foundFiles = new ConcurrentLinkedQueue<>();
         Queue<FileTask> conflicts = new ConcurrentLinkedQueue<>();
+        Set<String> targets = new HashSet<>();
         for (int top = 0; top < sources.size() && !cancelled; top++) {
             Path source = sources.get(top);
-            String name = targetName != null && sources.size() == 1 ? targetName : source.getFileName().toString();
+            String name;
+            try {
+                name = targetName != null && sources.size() == 1 ? targetName : entryName(source);
+            } catch (IOException e) {
+                errors.add(new Problem(source.toString(), Entries.message(e)));
+                incomplete[top] = true;
+                continue;
+            }
             Path target = destination.resolve(name);
             BasicFileAttributes attrs;
             try {
                 attrs = Files.readAttributes(source, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             } catch (IOException e) {
-                errors.add(new Problem(source.toString(), message(e)));
+                errors.add(new Problem(source.toString(), Entries.message(e)));
                 incomplete[top] = true;
                 continue;
             }
-            boolean directory = attrs.isDirectory();
+            if (!targets.add(targetKey(target))) {
+                errors.add(new Problem(source.toString(), "A file with this name is already being "
+                        + (move ? "moved" : "copied") + " here"));
+                incomplete[top] = true;
+                continue;
+            }
+            boolean directory = Entries.isPlainDirectory(attrs);
             if (move && target.equals(source) && !source.getFileName().toString().equals(name)) {
                 // only the letter case changes (a.txt -> A.txt on a case-insensitive file system)
                 renames.add(new Path[] {source, target});
@@ -466,12 +490,21 @@ public final class CopyJob implements Job {
             Entries.list(source, new Entries.Handler() {
                 @Override
                 public void entry(Path path, BasicFileAttributes attrs) {
-                    Path to = target.resolve(path.getFileName().toString());
+                    String name;
+                    try {
+                        name = entryName(path);
+                    } catch (IOException e) {
+                        errors.add(new Problem(path.toString(), Entries.message(e)));
+                        incomplete[top] = true;
+                        return;
+                    }
+                    Path to = target.resolve(name);
                     // existing == null: the target could not be listed, so every name is checked.
                     boolean exists = targetExists && (existing == null
-                            || existing.contains(path.getFileName().toString().toLowerCase(Locale.ROOT)))
+                            || existing.contains(name.toLowerCase(Locale.ROOT)))
                             && Files.exists(to, LinkOption.NOFOLLOW_LINKS);
-                    if (attrs.isDirectory()) {
+                    // A junction or other reparse point is copied as a link, never descended into.
+                    if (Entries.isPlainDirectory(attrs)) {
                         if (exists && !Files.isDirectory(to)) {
                             errors.add(new Problem(to.toString(), "A file with this name already exists"));
                             incomplete[top] = true;
@@ -495,7 +528,7 @@ public final class CopyJob implements Job {
 
                 @Override
                 public void failed(Path path, IOException error) {
-                    errors.add(new Problem(path.toString(), message(error)));
+                    errors.add(new Problem(path.toString(), Entries.message(error)));
                     incomplete[top] = true;
                 }
             });
@@ -575,14 +608,28 @@ public final class CopyJob implements Job {
         }
     }
 
-    private boolean sameVolume(Path source) {
-        try {
-            // a dry run has not created the destination yet: its nearest existing parent is on the same volume
-            Path existing = destination;
-            while (existing != null && !Files.exists(existing)) {
-                existing = existing.getParent();
+    /** The destination's volume is looked up once per job, not once per source. */
+    private FileStore destinationStore() {
+        if (!destinationStoreKnown) {
+            destinationStoreKnown = true;
+            try {
+                // a dry run has not created the destination yet: its nearest existing parent is on the same volume
+                Path existing = destination;
+                while (existing != null && !Files.exists(existing)) {
+                    existing = existing.getParent();
+                }
+                destinationStore = existing == null ? null : Files.getFileStore(existing);
+            } catch (IOException e) {
+                destinationStore = null;
             }
-            return existing != null && Files.getFileStore(source).equals(Files.getFileStore(existing));
+        }
+        return destinationStore;
+    }
+
+    private boolean sameVolume(Path source) {
+        FileStore store = destinationStore();
+        try {
+            return store != null && Files.getFileStore(source).equals(store);
         } catch (IOException e) {
             return false;
         }
@@ -632,7 +679,7 @@ public final class CopyJob implements Job {
             // A move must not delete a source whose folder never arrived (an empty one has no file to fail).
             incomplete[dir.top()] = true;
             errors.add(new Problem(dir.target().toString(), e instanceof FileAlreadyExistsException
-                    ? APPEARED : "Cannot create folder: " + message(e)));
+                    ? APPEARED : "Cannot create folder: " + Entries.message(e)));
         }
     }
 
@@ -655,6 +702,10 @@ public final class CopyJob implements Job {
                 // Cancelling interrupts the workers, which NIO reports as an IOException: not a failure of the file.
                 fail(task.source(), e);
             }
+        } catch (RuntimeException | Error e) {
+            // Nothing may stop the other files or let a move delete a source that was not fully copied.
+            incomplete[task.top()] = true;
+            errors.add(new Problem(task.source().toString(), String.valueOf(e)));
         }
     }
 
@@ -690,13 +741,16 @@ public final class CopyJob implements Job {
     }
 
     private void deleteMovedSources(List<Path[]> renames) {
+        Set<Path> renamed = new HashSet<>();
+        for (Path[] rename : renames) {
+            renamed.add(rename[0]);
+        }
         for (int top = 0; top < sources.size() && !cancelled; top++) {
             Path source = sources.get(top);
-            if (incomplete[top] || renamed(renames, source)) {
+            if (incomplete[top] || renamed.contains(source)) {
                 continue;
             }
             current = source.getFileName().toString();
-            int before = errors.size();
             new TreeDeleter(Parallel.threads(source), () -> cancelled, new TreeDeleter.Listener() {
                 @Override
                 public void deleting(Path path) {
@@ -711,26 +765,20 @@ public final class CopyJob implements Job {
                     errors.add(new Problem(path.toString(), DeleteJob.reason(error)));
                 }
             }).delete(source);
-            if (errors.size() == before) {
-                filesDone.incrementAndGet();
-            }
         }
-    }
-
-    private static boolean renamed(List<Path[]> renames, Path source) {
-        for (Path[] rename : renames) {
-            if (rename[0].equals(source)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private void fail(Path source, IOException e) {
-        errors.add(new Problem(source.toString(), message(e)));
+        errors.add(new Problem(source.toString(), Entries.message(e)));
     }
 
-    private static String message(IOException e) {
-        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    /** A name taken from inside an archive is an entry name: it must not carry a path or a stream into the target. */
+    private static String entryName(Path path) throws IOException {
+        String name = path.getFileName().toString();
+        return Archives.isVirtual(path) ? Archives.safeEntryName(name) : name;
+    }
+
+    private static String targetKey(Path target) {
+        return CASE_INSENSITIVE ? target.toString().toLowerCase(Locale.ROOT) : target.toString();
     }
 }

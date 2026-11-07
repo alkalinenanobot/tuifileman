@@ -147,7 +147,7 @@ public final class FileSearch {
 
     /** Whether a file name matches any of the patterns of the list; see {@link Query#names}. */
     public static Predicate<String> nameFilter(String names) {
-        List<Pattern> patterns = new ArrayList<>();
+        List<Glob.Compiled> patterns = new ArrayList<>();
         for (String glob : Glob.split(names)) {
             patterns.add(Glob.compile(Glob.has(glob) ? glob : "*" + glob + "*", true));
         }
@@ -155,8 +155,8 @@ public final class FileSearch {
             return name -> true;
         }
         return name -> {
-            for (Pattern pattern : patterns) {
-                if (pattern.matcher(name).matches()) {
+            for (Glob.Compiled pattern : patterns) {
+                if (pattern.matches(name)) {
                     return true;
                 }
             }
@@ -201,7 +201,7 @@ public final class FileSearch {
     private void unreadable(Path path, Exception failure) {
         if (unreadable.incrementAndGet() <= UNREADABLE_SAMPLES) {
             String reason = failure instanceof java.nio.file.AccessDeniedException ? "access denied"
-                    : failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+                    : Entries.message(failure);
             unreadableSamples.add(new String[] {path.toString(), reason});
         }
     }
@@ -257,7 +257,7 @@ public final class FileSearch {
             pool = new ForkJoinPool(Parallel.threads(start));
             pool.invoke(new FolderTask(start, archive, 1, "", archive == null ? query.ignore() : IgnoreMatcher.NONE));
         } catch (RuntimeException e) {
-            error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            error = Entries.message(e);
         } finally {
             if (pool != null) {
                 pool.shutdown();

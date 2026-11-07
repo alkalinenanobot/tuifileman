@@ -145,4 +145,19 @@ class DirCompareIgnoreTest {
         assertTrue(has(items, "src/main.c"));
         assertFalse(asked.contains("node_modules/pkg"), "an excluded folder is not listed");
     }
+
+    @Test
+    void aNestedGitignoreThatCannotBeReadFailsTheWholeScan() throws Exception {
+        Fixtures.file(left, "a/b/.gitignore", "*.keep\n");
+        Fixtures.file(left, "a/b/protected.keep", "p");
+        Fixtures.file(left, "z/x.txt", "x");
+        Fixtures.file(right, "a/b/other.txt", "o");
+        Path rules = left.resolve("a/b/.gitignore");
+        try (AutoCloseable locked = org.ds.tuifileman.UnreadableFile.lock(rules)) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(locked != null, "the user can read any file (root)");
+            IOException failure = org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+                    () -> scan(IgnoreMatcher.git(List.of(), true, left, right)));
+            assertTrue(failure.getMessage().contains(rules.toString()), failure.getMessage());
+        }
+    }
 }

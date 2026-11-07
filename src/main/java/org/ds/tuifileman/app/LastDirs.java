@@ -7,6 +7,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import org.ds.tuifileman.config.Config;
+import org.ds.tuifileman.fs.AtomicFile;
 
 /**
  * The folders of the left and right panel, kept in a two-line text file next to the config so the next start opens
@@ -51,7 +52,7 @@ final class LastDirs {
         }
         try {
             Files.createDirectories(file.getParent());
-            Files.write(file, lines, StandardCharsets.UTF_8);
+            AtomicFile.writeLines(file, lines, StandardCharsets.UTF_8);
             written = lines;
         } catch (IOException e) {
             // Not remembered this time; the next change tries again.

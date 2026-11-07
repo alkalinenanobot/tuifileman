@@ -1,6 +1,7 @@
 package org.ds.tuifileman.app;
 
 import org.ds.tuifileman.config.Config;
+import org.ds.tuifileman.fs.AtomicFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -51,7 +52,7 @@ final class RunHistory {
         }
         try {
             Files.createDirectories(file.getParent());
-            Files.write(file, commands, StandardCharsets.UTF_8);
+            AtomicFile.writeLines(file, commands, StandardCharsets.UTF_8);
             return null;
         } catch (IOException e) {
             return "Cannot save history: " + e.getMessage();

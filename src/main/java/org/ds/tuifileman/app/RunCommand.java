@@ -1,6 +1,7 @@
 package org.ds.tuifileman.app;
 
 import org.ds.tuifileman.config.Config;
+import org.ds.tuifileman.fs.SystemTools;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -164,11 +165,11 @@ final class RunCommand {
         String text = command.strip().replace('\r', ' ').replace('\n', ' ');
         boolean empty = text.isEmpty();
         return switch (shell.kind()) {
-            case CMD -> empty ? "cmd.exe /k" : "cmd.exe /s " + (keepOpen ? "/k" : "/c") + " \"" + text + "\"";
+            case CMD -> empty ? program(SystemTools.cmd()) + " /k" : program(SystemTools.cmd()) + " /s " + (keepOpen ? "/k" : "/c") + " \"" + text + "\"";
             case UNIX -> throw new IllegalArgumentException("a Unix shell is started with launch()");
-            case POWERSHELL -> powershell("powershell.exe", text, keepOpen);
-            case PWSH -> powershell("pwsh.exe", text, keepOpen);
-            case WSL -> empty ? "wsl.exe" : "wsl.exe -e bash -lc \"eval \\\"$(echo "
+            case POWERSHELL -> powershell(SystemTools.powershell(), text, keepOpen);
+            case PWSH -> powershell(pwshPath(), text, keepOpen);
+            case WSL -> empty ? program(SystemTools.system32("wsl.exe")) : program(SystemTools.system32("wsl.exe")) + " -e bash -lc \"eval \\\"$(echo "
                     + Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8))
                     + " | base64 -d)\\\"" + (keepOpen ? "; exec bash -l" : "") + "\"";
             case CUSTOM -> {
@@ -180,12 +181,26 @@ final class RunCommand {
         };
     }
 
+    /**
+     * A program in a {@code start} line, by full path: a bare name is looked up in the working folder first, which
+     * is the folder being browsed. Quoted because the path can hold spaces.
+     */
+    private static String program(String exe) {
+        return exe.indexOf(' ') >= 0 || exe.indexOf('\\') >= 0 ? '"' + exe + '"' : exe;
+    }
+
+    /** pwsh.exe is not part of Windows; the one on PATH, or the bare name when there is none. */
+    private static String pwshPath() {
+        Path found = find("pwsh.exe");
+        return found == null ? "pwsh.exe" : found.toAbsolutePath().toString();
+    }
+
     private static String powershell(String exe, String text, boolean keepOpen) {
         if (text.isEmpty()) {
-            return exe + " -NoExit";
+            return program(exe) + " -NoExit";
         }
         String encoded = Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_16LE));
-        return exe + (keepOpen ? " -NoExit" : "") + " -EncodedCommand " + encoded;
+        return program(exe) + (keepOpen ? " -NoExit" : "") + " -EncodedCommand " + encoded;
     }
 
     /** The argument for {@code cmd /s /c} that opens {@code commandLine} in a new window. */
@@ -206,7 +221,7 @@ final class RunCommand {
             return "Run command is only available on Windows";
         }
         try {
-            new ProcessBuilder("cmd.exe", "/d", "/s", "/c", startLine(commandLine(shell, command, keepOpen)))
+            new ProcessBuilder(SystemTools.cmd(), "/d", "/s", "/c", startLine(commandLine(shell, command, keepOpen)))
                     .directory(directory.toFile())
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)

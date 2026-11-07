@@ -39,7 +39,12 @@ public interface IgnoreMatcher {
         return ignoredBy(name, directory) != 0;
     }
 
-    /** The matcher for the subfolder {@code name}; {@code left} and {@code right} are null where it is missing. */
+    /**
+     * The matcher for the subfolder {@code name}; {@code left} and {@code right} are null where it is missing.
+     *
+     * @throws java.io.UncheckedIOException when a {@code .gitignore} of the subfolder exists but cannot be read:
+     *         its rules would silently vanish, and a mirror would then delete what they protect
+     */
     IgnoreMatcher enter(String name, Path left, Path right);
 
     /**

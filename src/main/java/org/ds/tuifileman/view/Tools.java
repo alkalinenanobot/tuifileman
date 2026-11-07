@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.ds.tuifileman.fs.SystemTools;
 
 /**
  * Finds optional external tools. A program started from an already running Windows Terminal keeps the
@@ -86,16 +87,23 @@ final class Tools {
         return new Output(bytes.toByteArray(), truncated);
     }
 
-    /** The command to start: unchanged when it is a path or found on the current PATH, else the full path found. */
+    /**
+     * The command to start: unchanged when it is a path, else the full path of the tool found on the current PATH
+     * or the registry PATH. A bare name would make CreateProcess look in the working folder first.
+     */
     static String resolve(String command) {
+        return resolve(command, System.getenv("PATH"));
+    }
+
+    static String resolve(String command, String path) {
         if (!WINDOWS || command == null || command.isBlank() || command.contains("\\") || command.contains("/")
                 || command.contains(":")) {
             return command;
         }
-        if (find(command, splitPath(System.getenv("PATH"))) != null) {
-            return command;
+        String found = find(command, splitPath(path));
+        if (found == null) {
+            found = find(command, registryDirs());
         }
-        String found = find(command, registryDirs());
         if (found == null) {
             found = find(command, knownDirs());
         }
@@ -139,10 +147,14 @@ final class Tools {
     private static String find(String command, List<String> dirs) {
         for (String dir : dirs) {
             for (String extension : EXTENSIONS) {
+                // An extensionless file next to tool.exe is a script for another shell, not something Windows runs.
+                if (extension.isEmpty() && command.indexOf('.') < 0) {
+                    continue;
+                }
                 try {
                     Path candidate = Path.of(dir, command + extension);
                     if (Files.isRegularFile(candidate)) {
-                        return candidate.toString();
+                        return candidate.toAbsolutePath().toString();
                     }
                 } catch (RuntimeException ignored) { }
             }
@@ -174,7 +186,7 @@ final class Tools {
 
     private static String readPath(String key) {
         try {
-            Process process = new ProcessBuilder("reg", "query", key, "/v", "Path").redirectErrorStream(true).start();
+            Process process = new ProcessBuilder(SystemTools.system32("reg.exe"), "query", key, "/v", "Path").redirectErrorStream(true).start();
             process.getOutputStream().close();
             String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
             process.waitFor(5, TimeUnit.SECONDS);

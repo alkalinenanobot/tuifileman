@@ -10,6 +10,7 @@ import static org.ds.tuifileman.Fixtures.tree;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import org.ds.tuifileman.app.CopyJob.Conflict;
 import org.ds.tuifileman.app.CopyJob.ConflictResolver;
@@ -169,6 +170,107 @@ class CopyJobTest {
                 job.errors().toString());
         assertEquals(Map.of("tree", "<dir>", "tree/conflict.txt", "new", "tree/b.txt", "mine", "tree/sub", "<dir>",
                 "tree/sub/c.txt", "C"), tree(src()), "a move keeps every source");
+    }
+
+    @Test
+    void twoSourcesWithOneTargetNameNeverReplaceEachOther() throws Exception {
+        for (boolean move : new boolean[] {false, true}) {
+            Path first = file(root, "one-" + move + "/x.txt", "first");
+            Path second = file(root, "two-" + move + "/x.txt", "second");
+            Path target = dir(root, "to-" + move);
+            CopyJob job = new CopyJob(entries(first, second), target, move, always(Conflict.OVERWRITE_ALL));
+            job.run();
+            assertEquals(Map.of("x.txt", "first"), tree(target), "move=" + move);
+            assertEquals(1, job.errors().size(), job.errors().toString());
+            assertEquals(second.toString(), job.errors().get(0).path());
+            assertEquals("second", Files.readString(second), "the refused source stays, move=" + move);
+        }
+    }
+
+    @Test
+    void sourcesDifferingOnlyInLetterCaseClashOnACaseInsensitiveSystem() throws Exception {
+        assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("win"));
+        Path first = file(root, "one/x.txt", "first");
+        Path second = file(root, "two/X.txt", "second");
+        CopyJob job = run(true, always(Conflict.OVERWRITE_ALL), first, second);
+        assertEquals(Map.of("x.txt", "first"), tree(dst()));
+        assertEquals(1, job.errors().size(), job.errors().toString());
+        assertEquals("second", Files.readString(second));
+    }
+
+    @Test
+    void aRenameNeverReplacesATargetThatAppearedAfterPlanning() throws Exception {
+        file(src(), "new.txt", "mine");
+        file(src(), "asked.txt", "S");
+        file(dst(), "asked.txt", "old");
+        Path appearing = dst().resolve("new.txt");
+        // The conflict is asked after planning, just before the renames: the file shows up in between.
+        CopyJob job = run(true, (source, existing) -> {
+            try {
+                Files.writeString(appearing, "created meanwhile");
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            return Conflict.SKIP;
+        }, src().resolve("new.txt"), src().resolve("asked.txt"));
+        assertEquals("created meanwhile", Files.readString(appearing));
+        assertEquals("mine", Files.readString(src().resolve("new.txt")), "the source of a failed rename stays");
+        assertEquals(1, job.errors().size(), job.errors().toString());
+        assertTrue(job.errors().get(0).reason().startsWith("Target already exists"), job.errors().toString());
+    }
+
+    @Test
+    void aJunctionOrLinkInsideTheSourceIsCopiedAsALinkNeverFollowed() throws Exception {
+        file(src(), "tree/a.txt", "A");
+        Path elsewhere = dir(root, "elsewhere");
+        file(elsewhere, "secret.txt", "S");
+        directoryLink(src().resolve("tree/loop"), src().resolve("tree"));
+        directoryLink(src().resolve("tree/other"), elsewhere);
+        CopyJob job = run(false, always(Conflict.CANCEL), src().resolve("tree"));
+        assertTrue(job.errors().isEmpty(), job.errors().toString());
+        assertEquals(Map.of("tree", "<dir>", "tree/a.txt", "A", "tree/loop", "<dir>", "tree/other", "<dir>"),
+                tree(dst()));
+
+        // a link as the source itself: the link is copied, not the folder behind it
+        Path link = directoryLink(src().resolve("link"), elsewhere);
+        Path top = dir(root, "top");
+        CopyJob single = new CopyJob(entries(link), top, false, always(Conflict.CANCEL));
+        single.run();
+        assertTrue(single.errors().isEmpty(), single.errors().toString());
+        assertEquals(Map.of("link", "<dir>"), tree(top));
+        // JUnit's cleanup cannot walk a Windows junction loop: remove the links first
+        Files.delete(link);
+        Files.delete(src().resolve("tree/loop"));
+        Files.delete(src().resolve("tree/other"));
+    }
+
+    @Test
+    void movingAFolderWithLinksRemovesTheLinksButNeverWhatTheyPointTo() throws Exception {
+        file(src(), "tree/a.txt", "A");
+        Path elsewhere = dir(root, "elsewhere");
+        file(elsewhere, "secret.txt", "S");
+        directoryLink(src().resolve("tree/loop"), src().resolve("tree"));
+        directoryLink(src().resolve("tree/other"), elsewhere);
+        file(dst(), "tree/keep.txt", "K"); // an existing target folder: copy and delete instead of one rename
+        CopyJob job = run(true, always(Conflict.CANCEL), src().resolve("tree"));
+        assertTrue(job.errors().isEmpty(), job.errors().toString());
+        assertFalse(Files.exists(src().resolve("tree"), java.nio.file.LinkOption.NOFOLLOW_LINKS));
+        assertEquals(Map.of("secret.txt", "S"), tree(elsewhere));
+        assertEquals(Map.of("tree", "<dir>", "tree/a.txt", "A", "tree/keep.txt", "K", "tree/loop", "<dir>",
+                "tree/other", "<dir>"), tree(dst()));
+    }
+
+    @Test
+    void aMoveCountsEveryItemOnce() throws Exception {
+        file(src(), "a.txt", "A");
+        file(src(), "tree/b.txt", "B");
+        file(src(), "tree/sub/c.txt", "C");
+        file(dst(), "tree/keep.txt", "K"); // copied and deleted: the folder is merged, not renamed
+        CopyJob job = run(true, always(Conflict.CANCEL), src().resolve("a.txt"), src().resolve("tree"));
+        assertTrue(job.errors().isEmpty(), job.errors().toString());
+        assertEquals(3, job.filesTotal());
+        assertEquals(3, job.filesDone());
+        assertTrue(job.summary().startsWith("Moved 3 items"), job.summary());
     }
 
     private record Policy(Conflict answer, Map<String, String> expected, int skipped) { }

@@ -2,6 +2,7 @@ package org.ds.tuifileman.fs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -76,6 +77,19 @@ class ArchivePathsTest {
     }
 
     @Test
+    void resolvingTheSameInnerArchiveTwiceSharesOneTemporaryCopy() throws Exception {
+        Path outer = dir.resolve("outer.zip");
+        try (OutputStream out = Files.newOutputStream(outer); ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("inner.zip"));
+            zip.write(zipBytes("deep.txt", "deeper"));
+            zip.closeEntry();
+        }
+        Path first = ArchivePaths.resolve(outer + "!/inner.zip!/deep.txt");
+        Path second = ArchivePaths.resolve(outer + "!/inner.zip!/deep.txt");
+        assertSame(first.getFileSystem(), second.getFileSystem());
+    }
+
+    @Test
     void anythingElseIsAPlainPath() throws Exception {
         Path plain = Files.writeString(dir.resolve("a!b.txt"), "x");
         assertEquals(plain, ArchivePaths.resolve(plain.toString()), "a ! inside a name is not a separator");
@@ -87,5 +101,13 @@ class ArchivePathsTest {
     void aFileThatIsNotAnArchiveBeforeTheBangIsAnError() throws Exception {
         Path text = Files.writeString(dir.resolve("t.txt"), "not a zip");
         assertThrows(IOException.class, () -> ArchivePaths.resolve(text + "!/x"));
+    }
+
+    @Test
+    void safeEntryNameRefusesWhatCouldLeaveTheTargetFolder() throws Exception {
+        assertEquals("a b.txt", Archives.safeEntryName("a b.txt"));
+        for (String bad : new String[] {"", ".", "..", "..\\..\\x.txt", "C:\\Users\\x\\x.txt", "C:x.txt", "a/b", "a\\b", "a\tb", "a\nb"}) {
+            assertThrows(IOException.class, () -> Archives.safeEntryName(bad), bad);
+        }
     }
 }

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.ds.tuifileman.fs.SystemTools;
 
 /**
  * Opens a file with the program Windows associates with its type, like a double click in Explorer. It goes
@@ -22,7 +23,7 @@ final class Launcher {
     static String open(Path file) {
         Path absolute = file.toAbsolutePath();
         List<String> command = WINDOWS
-                ? List.of("rundll32.exe", "url.dll,FileProtocolHandler", absolute.toString())
+                ? List.of(SystemTools.system32("rundll32.exe"), "url.dll,FileProtocolHandler", absolute.toString())
                 : unixCommand(absolute, Files.isExecutable(absolute), RunCommand::onPath, RunCommand::windowsPath);
         if (command == null) {
             return "Cannot open " + file.getFileName() + ": no opener found (install xdg-utils; in WSL wslu or explorer.exe also work)";

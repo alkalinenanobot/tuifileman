@@ -4,11 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.model.DirectoryListing;
 import org.ds.tuifileman.model.FileEntry;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -189,6 +192,60 @@ class ArchiveBrowseTest {
             assertEquals(archive, plain.path());
         }
         assertTrue(Files.exists(archive), "a real file is never deleted");
+    }
+
+    @Test
+    void extractRefusesEntryNamesThatWouldEscapeTheTempFolder() throws Exception {
+        // "dir/ok.txt" has a slash, so the backslash names are not repaired into folders (see ZipNames).
+        Path archive = zip("evil.zip", "dir/ok.txt", "ok", "..\\..\\evil.txt", "x", "C:\\Users\\x\\evil.txt", "y");
+        Path rootPath = Archives.open(archive);
+        try {
+            List<Path> evil;
+            try (var stream = Files.list(rootPath)) {
+                evil = stream.filter(p -> p.getFileName().toString().indexOf('\\') >= 0).toList();
+            }
+            assertEquals(2, evil.size());
+            for (Path entry : evil) {
+                IOException refused = assertThrows(IOException.class, () -> Archives.extract(entry));
+                assertTrue(refused.getMessage().startsWith("unsafe archive entry name"), refused.getMessage());
+                assertThrows(IOException.class, () -> Archives.extractKept(entry));
+            }
+            assertFalse(Files.exists(root.resolve("evil.txt")));
+        } finally {
+            Archives.release(rootPath);
+        }
+    }
+
+    @Test
+    void anInnerArchiveIsExtractedOnceAndItsCopyDiesWithTheLastReference() throws Exception {
+        Path inner = zip("inner.zip", "deep.txt", "D");
+        Path outer = root.resolve("outer.zip");
+        try (OutputStream out = Files.newOutputStream(outer); ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("inner.zip"));
+            zip.write(Files.readAllBytes(inner));
+            zip.closeEntry();
+        }
+        Path outerRoot = Archives.open(outer);
+        try {
+            Path first = Archives.open(outerRoot.resolve("inner.zip"));
+            Path second = Archives.open(outerRoot.resolve("inner.zip"));
+            assertSame(first.getFileSystem(), second.getFileSystem(), "the same temporary copy is reused");
+            Path copy = Path.of(first.getFileSystem().toString()); // the zip provider names its file system by the file
+            assertTrue(Files.exists(copy));
+            Archives.release(first);
+            assertTrue(Files.exists(copy), "one reference is left");
+            Archives.release(second);
+            assertFalse(Files.exists(copy));
+            assertFalse(Files.exists(copy.getParent()), "the folder of the copy goes too");
+
+            Path again = Archives.open(outerRoot.resolve("inner.zip"));
+            Path secondCopy = Path.of(again.getFileSystem().toString());
+            assertTrue(Files.exists(secondCopy));
+            Archives.closeAll();
+            assertFalse(Files.exists(secondCopy), "closeAll deletes the copies too");
+        } finally {
+            Archives.release(outerRoot);
+        }
     }
 
     @Test

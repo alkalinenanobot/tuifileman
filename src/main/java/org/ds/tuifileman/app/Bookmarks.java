@@ -7,6 +7,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.ds.tuifileman.fs.AtomicFile;
 
 /** Favourite directories, kept in a plain text file (one path per line) so it can be edited by hand. */
 final class Bookmarks {
@@ -84,7 +85,7 @@ final class Bookmarks {
             for (Path path : paths) {
                 lines.add(path.toString());
             }
-            Files.write(file, lines, StandardCharsets.UTF_8);
+            AtomicFile.writeLines(file, lines, StandardCharsets.UTF_8);
             return null;
         } catch (IOException e) {
             return "Cannot save bookmarks: " + e.getMessage();

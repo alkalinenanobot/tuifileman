@@ -99,6 +99,13 @@ class WildcardsTest {
     }
 
     @Test
+    void manyStarsOnANameThatDoesNotMatchDoNotTakeExponentialTime() throws Exception {
+        Fixtures.file(folder, "a".repeat(120) + ".txt", "x");
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(5),
+                () -> assertEquals(List.of(), expand("*a*a*a*a*a*a*a*a*b")));
+    }
+
+    @Test
     void aWildcardInAParentSegmentOrAMissingParentIsAUsageError() {
         assertThrows(Args.UsageException.class, () -> Wildcards.expand(folder + File.separator + "*" + File.separator + "x.txt"));
         assertThrows(Args.UsageException.class, () -> Wildcards.expand("plain.txt"), "no wildcard at all is not expandable");

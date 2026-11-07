@@ -2,10 +2,14 @@ package org.ds.tuifileman.ignore;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import org.ds.tuifileman.Fixtures;
+import org.ds.tuifileman.UnreadableFile;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -130,5 +134,26 @@ class GitIgnoreMatcherTest {
         IgnoreMatcher matcher = GitIgnoreMatcher.create(List.of(first, second), false, left, right, false);
         assertTrue(matcher.ignored("a.log", false));
         assertFalse(matcher.ignored("keep.log", false));
+    }
+
+    @Test
+    void anUnreadableGitignoreStopsTheRunInsteadOfDroppingItsRules() throws Exception {
+        Fixtures.file(left, ".gitignore", "*.log\n");
+        Path nestedRules = Fixtures.file(left, "src/.gitignore", "*.tmp\n");
+        Fixtures.dir(right, "src");
+        try (AutoCloseable locked = UnreadableFile.lock(nestedRules)) {
+            assumeTrue(locked != null, "the user can read any file (root)");
+            IgnoreMatcher root = nested(false);
+            UncheckedIOException failure = assertThrows(UncheckedIOException.class,
+                    () -> root.enter("src", left.resolve("src"), right.resolve("src")));
+            assertTrue(failure.getMessage().contains(nestedRules.toString()), failure.getMessage());
+            assertTrue(failure.getMessage().contains("cannot read"), failure.getMessage());
+        }
+        Path rootRules = left.resolve(".gitignore");
+        try (AutoCloseable locked = UnreadableFile.lock(rootRules)) {
+            assumeTrue(locked != null, "the user can read any file (root)");
+            IOException failure = assertThrows(IOException.class, () -> nested(false));
+            assertTrue(failure.getMessage().contains(rootRules.toString()), failure.getMessage());
+        }
     }
 }

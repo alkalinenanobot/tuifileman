@@ -49,6 +49,8 @@ final class SyncView {
         volatile List<Item> result;
         volatile String error;
         volatile boolean done;
+        /** Set by the UI thread once the outcome (result or failure) has been taken over. */
+        boolean taken;
     }
 
     private final Screen screen;
@@ -137,10 +139,22 @@ final class SyncView {
 
     // ---- scanning ----
 
-    private void startScan() {
+    /**
+     * Starts a scan. The previous result goes first: a scan that fails or is aborted must never leave the
+     * earlier items behind, ready to be executed against a state that may no longer exist.
+     */
+    void startScan() {
         if (scan != null) {
             scan.cancel.set(true);
         }
+        items = List.of();
+        visible = List.of();
+        equalCount = 0;
+        ignoredCount = 0;
+        cursor = 0;
+        top = 0;
+        message = "";
+        recount();
         Scan task = new Scan();
         scan = task;
         boolean obeyGitignore = gitignore;
@@ -150,7 +164,7 @@ final class SyncView {
                         ? IgnoreMatcher.git(List.of(), true, leftRoot, rightRoot) : IgnoreMatcher.NONE;
                 task.result = DirCompare.scan(leftRoot, rightRoot, recursive, contents, task.cancel, task.progress,
                         ignore, new AtomicInteger(), relative -> false, TimeTolerance.configured(), task.unreadable);
-            } catch (IOException | RuntimeException e) {
+            } catch (Throwable e) {
                 task.error = e.getMessage() == null ? e.toString() : e.getMessage();
             } finally {
                 task.done = true;
@@ -160,24 +174,42 @@ final class SyncView {
         thread.start();
     }
 
-    private boolean scanning() {
+    boolean scanning() {
         return scan != null && !scan.done;
     }
 
-    /** Takes over a finished scan: default actions, filter, cursor to the top. */
-    private void pollScan() {
-        if (scan != null && scan.done && scan.result != null && !scan.cancel.get()) {
-            items = scan.result;
-            scan.result = null;
-            DirCompare.apply(items, Mode.MERGE);
-            rebuild(null);
-            cursor = 0;
-            top = 0;
-            DirCompare.Unreadable first = scan.unreadable.peek();
-            message = first != null
-                    ? scan.unreadable.size() + " unreadable, not compared (" + first.path() + ": " + first.reason() + ")"
-                    : items.isEmpty() ? "The directories are identical" : "";
+    /** Takes over a finished scan: default actions, filter, cursor to the top; a failed scan shows why. */
+    void pollScan() {
+        if (scan == null || !scan.done || scan.taken) {
+            return;
         }
+        scan.taken = true;
+        if (scan.cancel.get()) {
+            return;
+        }
+        if (scan.result == null) {
+            // A scan always ends with a result or an error; neither means it must not look like "no differences".
+            if (scan.error == null) {
+                scan.error = "the scan ended without a result";
+            }
+            message = "Scan failed: " + scan.error;
+            return;
+        }
+        items = scan.result;
+        scan.result = null;
+        DirCompare.apply(items, Mode.MERGE);
+        rebuild(null);
+        cursor = 0;
+        top = 0;
+        DirCompare.Unreadable first = scan.unreadable.peek();
+        message = first != null
+                ? scan.unreadable.size() + " unreadable, not compared (" + first.path() + ": " + first.reason() + ")"
+                : items.isEmpty() ? "The directories are identical" : "";
+    }
+
+    /** Why the last scan failed; null when it did not. */
+    String scanError() {
+        return scan == null ? null : scan.error;
     }
 
     private void rebuild(Item keep) {
@@ -238,7 +270,7 @@ final class SyncView {
                     return key;
                 }
                 boolean wasScanning = scanning();
-                if (scan != null && scan.done && scan.result != null) {
+                if (scan != null && scan.done && !scan.taken) {
                     return null;
                 }
                 long now = System.nanoTime();

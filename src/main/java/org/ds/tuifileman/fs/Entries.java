@@ -56,4 +56,9 @@ public final class Entries {
     public static boolean isPlainDirectory(BasicFileAttributes attrs) {
         return attrs.isDirectory() && !attrs.isSymbolicLink() && !attrs.isOther();
     }
+
+    /** The text shown for a failure: its message, or the exception's simple class name when it has none. */
+    public static String message(Throwable e) {
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    }
 }

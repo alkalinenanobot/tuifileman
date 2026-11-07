@@ -15,15 +15,23 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -163,8 +171,10 @@ final class SyncCommand implements Cli.Command {
             List<Item> scanned;
             Queue<DirCompare.Unreadable> missed = new ConcurrentLinkedQueue<>();
             // Nothing to ask, nothing to show first (no prompt, no dry run, no progress bar to draw): the copying
-            // starts while the scan still runs. Deletions still wait for the end of the scan.
-            if (!dryRun && args.has("yes") && Progress.resolve(progressMode, quiet, err) == Progress.Mode.NONE) {
+            // starts while the scan still runs. Deletions still wait for the end of the scan. Not with --gitignore:
+            // a nested .gitignore that turns out unreadable must stop the run before anything has been changed.
+            if (!dryRun && args.has("yes") && !args.has("gitignore")
+                    && Progress.resolve(progressMode, quiet, err) == Progress.Mode.NONE) {
                 streamed = new SyncJob(left, right);
                 SyncJob watched = streamed;
                 Thread watcher = new Thread(() -> OpCommand.watch(watched), "cancel-watch");
@@ -380,11 +390,18 @@ final class SyncCommand implements Cli.Command {
      * Reads a plan: one JSON object per line with at least {@code path}. An {@code action} is applied as it
      * stands; without one the {@code mode} decides from the {@code status} (as written by {@code diff}). Lines
      * of another {@code kind} (summary, result) are ignored. The current state of both trees is checked, and
-     * a path that is unsafe or no longer exists stops the run before anything is touched.
+     * a path that is unsafe, passes through a link, appears twice or no longer exists stops the run before
+     * anything is touched.
      */
     private static List<Item> readPlan(String source, Path left, Path right, Mode mode, long tolerance)
             throws Args.UsageException, IOException {
-        Map<String, Item> items = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        // Exact paths are the keys (Foo.txt and foo.txt are two files on Linux); the order is case-insensitive
+        // first, as in a scan.
+        Map<String, Item> items = new TreeMap<>(String.CASE_INSENSITIVE_ORDER.thenComparing(Comparator.naturalOrder()));
+        // Paths that fold to the same lower case: only on a case-insensitive file system they are one file.
+        Map<String, List<Item>> folded = new HashMap<>();
+        Set<String> checkedParents = new HashSet<>();
+        Set<String> rawPaths = new HashSet<>();
         try (BufferedReader reader = source.equals("-")
                 ? new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))
                 : Files.newBufferedReader(Path.of(source), StandardCharsets.UTF_8)) {
@@ -408,10 +425,26 @@ final class SyncCommand implements Cli.Command {
                 if (kind != null && !"item".equals(kind)) {
                     continue;
                 }
-                Item item = planItem(map, number, left, right, mode, tolerance);
-                if (item != null) {
-                    items.put(item.relative(), item);
+                // every item row counts, also an ignored one: a later row must not act on the same path
+                if (map.get("path") instanceof String rawPath && !rawPaths.add(rawPath)) {
+                    throw new Args.UsageException("plan line " + number + ": duplicate path '" + rawPath + "'");
                 }
+                Item item = planItem(map, number, left, right, mode, tolerance, checkedParents);
+                if (item == null) {
+                    continue;
+                }
+                String where = "plan line " + number + ": duplicate path '" + item.relative() + "'";
+                if (items.containsKey(item.relative())) {
+                    throw new Args.UsageException(where);
+                }
+                List<Item> same = folded.computeIfAbsent(item.relative().toLowerCase(Locale.ROOT), k -> new ArrayList<>());
+                for (Item earlier : same) {
+                    if (sameFile(left, right, earlier, item)) {
+                        throw new Args.UsageException(where + " (the same file as '" + earlier.relative() + "')");
+                    }
+                }
+                same.add(item);
+                items.put(item.relative(), item);
             }
         } catch (InvalidPathException e) {
             throw new Args.UsageException("invalid plan path: " + source);
@@ -419,13 +452,32 @@ final class SyncCommand implements Cli.Command {
         return new ArrayList<>(items.values());
     }
 
-    private static Item planItem(Map<?, ?> map, int number, Path left, Path right, Mode mode, long tolerance)
-            throws Args.UsageException, IOException {
+    /**
+     * Whether two plan paths that differ only in letter case address one file. The real (stored) spelling tells:
+     * a case-insensitive file system gives both the same, a case-sensitive one keeps two files apart (even
+     * hard links of one file, which {@code isSameFile} would merge).
+     */
+    private static boolean sameFile(Path left, Path right, Item a, Item b) throws IOException {
+        Path root;
+        if (a.left() != null && b.left() != null) {
+            root = left;
+        } else if (a.right() != null && b.right() != null) {
+            root = right;
+        } else {
+            return false;
+        }
+        return root.resolve(a.relative()).toRealPath(LinkOption.NOFOLLOW_LINKS)
+                .equals(root.resolve(b.relative()).toRealPath(LinkOption.NOFOLLOW_LINKS));
+    }
+
+    private static Item planItem(Map<?, ?> map, int number, Path left, Path right, Mode mode, long tolerance,
+                                 Set<String> checkedParents) throws Args.UsageException, IOException {
         String where = "plan line " + number + ": ";
         if (!(map.get("path") instanceof String path)) {
             throw new Args.UsageException(where + "missing \"path\"");
         }
         String relative = safeRelative(path, where);
+        checkParents(left, right, relative, checkedParents, where + "unsafe path '" + path + "' passes through a link");
         Status status = null;
         if (map.get("status") instanceof String name) {
             status = status(name, where);
@@ -451,6 +503,12 @@ final class SyncCommand implements Cli.Command {
         if (item == null) {
             throw new Args.UsageException(where + "'" + path + "' exists on neither side; the plan is out of date");
         }
+        // A one-sided status that no longer holds (the missing side has appeared) must not decide: a mirror
+        // would delete the file that is now on both sides.
+        if (status == Status.ONLY_LEFT && item.right() != null || status == Status.ONLY_RIGHT && item.left() != null) {
+            throw new Args.UsageException(where + "'" + path + "' is now on both sides although the plan says "
+                    + statusName(status) + "; the plan is out of date");
+        }
         Action chosen = action != null ? action : DirCompare.proposed(item, mode);
         if (!item.allows(chosen)) {
             throw new Args.UsageException(where + "cannot apply " + actionName(chosen) + " to '" + path
@@ -473,6 +531,37 @@ final class SyncCommand implements Cli.Command {
             }
         }
         return relative;
+    }
+
+    /**
+     * Scanning never follows a link or junction, so a plan must not either: a line {@code lib/foo.so} would
+     * otherwise delete through a linked {@code lib}. Every parent folder of the path is looked at without
+     * following links under both roots; a missing parent is fine (the item reports it), and a folder that
+     * passed once is remembered, so the cost is a few lookups per distinct folder, not per line.
+     */
+    private static void checkParents(Path left, Path right, String relative, Set<String> checked, String message)
+            throws Args.UsageException, IOException {
+        for (int end = relative.indexOf('/'); end >= 0; end = relative.indexOf('/', end + 1)) {
+            String parent = relative.substring(0, end);
+            if (checked.contains(parent)) {
+                continue;
+            }
+            for (Path root : new Path[] {left, right}) {
+                BasicFileAttributes attrs;
+                try {
+                    attrs = Files.readAttributes(root.resolve(parent), BasicFileAttributes.class,
+                            LinkOption.NOFOLLOW_LINKS);
+                } catch (AccessDeniedException e) {
+                    throw e;
+                } catch (FileSystemException e) {
+                    continue;   // missing, or below a file: the item reports it
+                }
+                if (attrs.isSymbolicLink() || attrs.isOther()) {
+                    throw new Args.UsageException(message);
+                }
+            }
+            checked.add(parent);
+        }
     }
 
     private static Status status(String text, String where) throws Args.UsageException {

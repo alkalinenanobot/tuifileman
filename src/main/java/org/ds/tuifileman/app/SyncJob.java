@@ -2,6 +2,7 @@ package org.ds.tuifileman.app;
 
 import org.ds.tuifileman.compare.DirCompare.Action;
 import org.ds.tuifileman.compare.DirCompare.Item;
+import org.ds.tuifileman.fs.Entries;
 import org.ds.tuifileman.fs.Parallel;
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -289,6 +290,9 @@ public final class SyncJob implements Job {
             if (!cancelled && !(e instanceof ClosedByInterruptException) && !(e instanceof InterruptedIOException)) {
                 errors.add(new Problem(target.toString(), DeleteJob.reason(e)));
             }
+        } catch (RuntimeException e) {
+            // Never ends the sync thread or skips the deletions silently: recorded like any failed item.
+            errors.add(new Problem(target.toString(), Entries.message(e)));
         } finally {
             filesDone.incrementAndGet();
         }
@@ -348,6 +352,8 @@ public final class SyncJob implements Job {
             deleted.incrementAndGet();
         } catch (IOException e) {
             errors.add(new Problem(target.toString(), DeleteJob.reason(e)));
+        } catch (RuntimeException e) {
+            errors.add(new Problem(target.toString(), Entries.message(e)));
         } finally {
             filesDone.incrementAndGet();
         }

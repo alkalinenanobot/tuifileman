@@ -237,13 +237,53 @@ class DirCompareTest {
         assertEquals(Status.ONLY_LEFT, items.get("docs/b.txt").status());
     }
 
+    /** Whether the file system under {@code root} treats names that differ only in letter case as one file. */
+    private boolean caseInsensitive() throws Exception {
+        file(root, "probe", "x");
+        return java.nio.file.Files.exists(root.resolve("PROBE"));
+    }
+
     @Test
-    void namesDifferingOnlyInCaseArePairedAcrossTheSides() throws Exception {
+    void namesDifferingOnlyInCaseArePairedWhenTheFileSystemTreatsThemAsOneFile() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(caseInsensitive(), "needs a case-insensitive file system");
         file(left(), "Readme.txt", "abc", 0);
         file(right(), "README.TXT", "abc", 0);
         Map<String, Item> items = scan();
         assertEquals(1, items.size(), items.keySet().toString());
         assertEquals(Status.SAME, items.get("Readme.txt").status());
+    }
+
+    @Test
+    void namesDifferingOnlyInCaseStayTwoFilesOnACaseSensitiveFileSystem() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(caseInsensitive(), "needs a case-sensitive file system");
+        file(left(), "Readme.txt", "abc", 0);
+        file(right(), "README.TXT", "abc", 0);
+        Map<String, Item> items = scan();
+        assertEquals(2, items.size(), items.keySet().toString());
+        assertEquals(Status.ONLY_LEFT, items.get("Readme.txt").status());
+        assertEquals(Status.ONLY_RIGHT, items.get("README.TXT").status());
+        // A mirror would otherwise treat them as one file and copy over (or skip) a different file.
+        assertEquals(Action.DELETE_RIGHT, DirCompare.proposed(items.get("README.TXT"), Mode.MIRROR_TO_RIGHT));
+    }
+
+    @Test
+    void aStalePlanStatusNeverOverridesTheCurrentSides() throws Exception {
+        file(left(), "both.txt", "abc", 60_000);
+        file(right(), "both.txt", "abc", 0);
+        file(left(), "gone.txt", "abc", 0);
+        for (Status stale : List.of(Status.ONLY_RIGHT, Status.ONLY_LEFT, Status.TYPE_MISMATCH, Status.IGNORED)) {
+            Item item = DirCompare.itemFor(left(), right(), "both.txt", stale);
+            assertEquals(Status.LEFT_NEWER, item.status(), "a plan saying " + stale + " is recomputed");
+            assertEquals(Action.NONE, DirCompare.proposed(item, Mode.CLEAR));
+            assertEquals(Action.TO_RIGHT, DirCompare.proposed(item, Mode.MIRROR_TO_RIGHT),
+                    "mirror must overwrite, never delete, a file that is on both sides");
+        }
+        assertEquals(Status.DIFFERENT, DirCompare.itemFor(left(), right(), "both.txt", Status.DIFFERENT).status(),
+                "a verdict about two files (e.g. from a content compare) is kept");
+        assertEquals(Status.LEFT_NEWER, DirCompare.itemFor(left(), right(), "both.txt", Status.RIGHT_NEWER).status(),
+                "a newer-side verdict is recomputed from the current times: the right file is not the newer one now");
+        assertEquals(Status.ONLY_LEFT, DirCompare.itemFor(left(), right(), "gone.txt", Status.SAME).status(),
+                "a missing side is always the current one");
     }
 
     @Test

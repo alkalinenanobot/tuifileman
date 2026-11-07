@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+Fixes from a code audit.
+
+- `move`/`copy`: two sources that would end up with the same name in the destination no longer replace each other
+  (the second one is reported, its source stays). A rename never replaces a file that appeared after planning.
+- Windows junctions (and other folder links) inside a copied or moved tree are copied as links, never followed, so a
+  loop link cannot fill the disk and a move no longer turns a link into a deep copy.
+- A failed or crashed file copy keeps its source in a move; a move counts each item once (summary, progress, JSON).
+- Archives: entry names with a backslash or a drive letter can no longer write outside the temporary folder. A nested
+  archive is extracted once and its temporary copy is deleted on close; extraction checks the free space first.
+- `sync --plan`: a plan's `only-left`/`only-right`/`left-newer`/`right-newer` verdicts are recomputed from the current
+  files (an old plan can no longer delete or overwrite a file that is now on both sides). A path that goes through a
+  link, or a path listed twice, is refused. Names that differ only in case stay two files on a case-sensitive disk.
+- `sync`/`diff` with `.gitignore` rules stop with an error when a nested `.gitignore` cannot be read, instead of
+  syncing as if it had no rules. The sync screen no longer runs the previous result after a failed rescan.
+- The editor, `config.ini`, bookmarks, last folders and run history are written to a temporary file and moved over the
+  old one, so a full disk or a kill cannot leave them empty. A file that holds only a line break is saved unchanged;
+  a BOM is not written in front of text that fell back to ANSI; a BOM at the start of `config.ini` no longer
+  duplicates its first section.
+- File name patterns use a linear matcher: `find --name "*a*b*c*d*e*"` no longer takes minutes on long names.
+- Windows: external tools (chafa, ffmpeg, pdftoppm, clipboard, shells) start by full path, so a program of the same
+  name in the folder you are browsing is not run instead.
+
 ## 0.8.0
 
 - Both panels open in the folders they were in when the program was last closed (`last-dirs.txt` next to the config,

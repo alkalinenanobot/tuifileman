@@ -1,5 +1,6 @@
 package org.ds.tuifileman.app;
 
+import org.ds.tuifileman.fs.Entries;
 import org.ds.tuifileman.fs.Parallel;
 import org.ds.tuifileman.model.FileEntry;
 import java.io.IOException;
@@ -175,7 +176,6 @@ public final class DeleteJob implements Job {
             return reason.startsWith("The process cannot access the file")
                     ? "File is in use by another program" : reason;
         }
-        String message = e.getMessage();
-        return message == null ? e.getClass().getSimpleName() : message;
+        return Entries.message(e);
     }
 }

@@ -7,7 +7,9 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -17,20 +19,30 @@ import java.util.stream.Stream;
  * copying out reuse the NIO code. Opens are counted: both panels may show the same archive.
  */
 public final class Archives {
+    /**
+     * The real archive file plus the chain of entry paths that leads from it to an inner archive (empty for an
+     * archive that is a real file), whose temporary copy is thereby found again. A list, not a joined string: an
+     * entry name may contain any separator character.
+     */
+    private record Key(Path file, List<String> chain) { }
+
     private static final class Open {
         final FileSystem system;
         final Path origin;
-        final Path file;
+        final Key key;
+        /** The folder holding the temporary copy of an inner archive; null for an archive that is a real file. */
+        final Path tempDirectory;
         int references = 1;
 
-        Open(FileSystem system, Path origin, Path file) {
+        Open(FileSystem system, Path origin, Key key, Path tempDirectory) {
             this.system = system;
             this.origin = origin;
-            this.file = file;
+            this.key = key;
+            this.tempDirectory = tempDirectory;
         }
     }
 
-    private static final Map<Path, Open> BY_FILE = new HashMap<>();
+    private static final Map<Key, Open> BY_FILE = new HashMap<>();
     private static final Map<FileSystem, Open> BY_SYSTEM = new HashMap<>();
     private static Path tempRoot;
 
@@ -43,19 +55,44 @@ public final class Archives {
 
     /**
      * Opens an archive file (or takes another reference to it) and returns the root of its entries.
-     * An archive inside another archive is extracted to a temporary file first.
+     * An archive inside another archive is extracted to a temporary file once; opening it again reuses that
+     * copy, and the last {@link #release} deletes it.
      */
     public static synchronized Path open(Path archive) throws IOException {
-        Path file = isVirtual(archive) ? extractKept(archive) : archive.toRealPath();
-        Open open = BY_FILE.get(file);
+        Key key;
+        if (isVirtual(archive)) {
+            Open outer = BY_SYSTEM.get(archive.getFileSystem());
+            if (outer == null) {
+                throw new IOException("the archive that holds " + archive + " is closed");
+            }
+            List<String> chain = new ArrayList<>(outer.key.chain());
+            chain.add(archive.toString());
+            key = new Key(outer.key.file(), chain);
+        } else {
+            key = new Key(archive.toRealPath(), List.of());
+        }
+        Open open = BY_FILE.get(key);
         if (open == null) {
-            open = new Open(newSystem(file), archive, file);
-            BY_FILE.put(file, open);
+            open = create(archive, key);
+            BY_FILE.put(key, open);
             BY_SYSTEM.put(open.system, open);
         } else {
             open.references++;
         }
         return open.system.getRootDirectories().iterator().next();
+    }
+
+    private static Open create(Path archive, Key key) throws IOException {
+        if (!isVirtual(archive)) {
+            return new Open(newSystem(key.file()), archive, key, null);
+        }
+        Extracted copy = extract(archive);
+        try {
+            return new Open(newSystem(copy.path()), archive, key, copy.directory());
+        } catch (IOException | RuntimeException e) {
+            copy.close();
+            throw e;
+        }
     }
 
     private static FileSystem newSystem(Path realFile) throws IOException {
@@ -84,22 +121,28 @@ public final class Archives {
             return;
         }
         BY_SYSTEM.remove(open.system);
-        BY_FILE.remove(open.file);
+        BY_FILE.remove(open.key);
+        discard(open);
+    }
+
+    public static synchronized void closeAll() {
+        for (Open open : BY_SYSTEM.values().toArray(new Open[0])) {
+            discard(open);
+        }
+        BY_SYSTEM.clear();
+        BY_FILE.clear();
+    }
+
+    /** Closes the archive and deletes the temporary copy of an archive that was inside another one. */
+    private static void discard(Open open) {
         try {
             open.system.close();
         } catch (IOException ignored) {
             // The archive is read-only: nothing is lost when closing fails.
         }
-    }
-
-    public static synchronized void closeAll() {
-        for (Open open : BY_SYSTEM.values().toArray(new Open[0])) {
-            try {
-                open.system.close();
-            } catch (IOException ignored) { }
+        if (open.tempDirectory != null) {
+            deleteTree(open.tempDirectory);
         }
-        BY_SYSTEM.clear();
-        BY_FILE.clear();
     }
 
     /** The archive file as the user saw it (a real file, or an entry of an outer archive). */
@@ -130,15 +173,51 @@ public final class Archives {
         return (origin == null ? "archive" : display(origin)) + "!" + path;
     }
 
+    /**
+     * A name that is safe to use as the file name of a copy made from an archive entry: zip entry names are
+     * arbitrary text, and the provider hands out names such as {@code ..\..\x} or {@code C:\x} as a "file name"
+     * that Windows would resolve outside the target folder.
+     *
+     * @throws IOException the name is empty, {@code .} or {@code ..}, or contains a separator, a colon or a control character
+     */
+    public static String safeEntryName(String name) throws IOException {
+        boolean unsafe = name.isEmpty() || name.equals(".") || name.equals("..");
+        for (int i = 0; i < name.length() && !unsafe; i++) {
+            char c = name.charAt(i);
+            unsafe = c == '\\' || c == '/' || c == ':' || Character.isISOControl(c);
+        }
+        if (unsafe) {
+            throw new IOException("unsafe archive entry name: " + name.replaceAll("\\p{Cntrl}", "?"));
+        }
+        return name;
+    }
+
     /** A file of the real file system with the content of {@code path}, deleted again by {@link Extracted#close}. */
     public static Extracted extract(Path path) throws IOException {
         if (!isVirtual(path)) {
             return new Extracted(path, null);
         }
-        Path dir = Files.createTempDirectory(tempRoot(), "x");
-        Path target = dir.resolve(path.getFileName().toString());
-        Files.copy(path, target, StandardCopyOption.REPLACE_EXISTING);
-        return new Extracted(target, dir);
+        Path fileName = path.getFileName();
+        if (fileName == null) {
+            throw new IOException("not a file inside an archive: " + path);
+        }
+        String name = safeEntryName(fileName.toString());
+        Path root = tempRoot();
+        if (Files.size(path) > Files.getFileStore(root).getUsableSpace()) {
+            throw new IOException("not enough free space in the temp folder");
+        }
+        Path dir = Files.createTempDirectory(root, "x");
+        try {
+            Path target = dir.resolve(name);
+            if (!target.normalize().startsWith(dir.normalize())) {
+                throw new IOException("unsafe archive entry name: " + name);
+            }
+            Files.copy(path, target, StandardCopyOption.REPLACE_EXISTING);
+            return new Extracted(target, dir);
+        } catch (IOException | RuntimeException e) {
+            deleteTree(dir);
+            throw e;
+        }
     }
 
     /** Like {@link #extract} but the file stays (an external program may still use it) until the program exits. */

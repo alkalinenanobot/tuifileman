@@ -1,5 +1,6 @@
 package org.ds.tuifileman.app;
 
+import org.ds.tuifileman.fs.Entries;
 import java.io.IOException;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileAlreadyExistsException;
@@ -44,7 +45,7 @@ final class FileOps {
         } catch (InvalidPathException e) {
             return "Invalid name";
         } catch (IOException e) {
-            return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            return Entries.message(e);
         }
     }
 }

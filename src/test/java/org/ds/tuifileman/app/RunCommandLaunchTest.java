@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 class RunCommandLaunchTest {
@@ -27,5 +28,17 @@ class RunCommandLaunchTest {
         assertEquals("-EncodedCommand", launch.command().get(1), "powershell: encoded command");
         assertEquals("Get-ChildItem 'a b'; \"x\"",
                 new String(Base64.getDecoder().decode(launch.command().get(2)), StandardCharsets.UTF_16LE), "powershell: UTF-16 base64");
+    }
+
+    @Test
+    void windowsShellsAreStartedByFullPathNotFromTheBrowsedFolder() {
+        Assumptions.assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("win")
+                && System.getenv("SystemRoot") != null);
+        var cmd = new RunCommand.Shell("cmd", RunCommand.Kind.CMD, null);
+        var powershell = new RunCommand.Shell("powershell", RunCommand.Kind.POWERSHELL, null);
+        assertTrue(RunCommand.commandLine(cmd, "dir", false).matches("(?i)\"[A-Za-z]:\\\\.*cmd\\.exe\" /s /c \"dir\""),
+                RunCommand.commandLine(cmd, "dir", false));
+        assertTrue(RunCommand.commandLine(powershell, "dir", false).matches("(?i)\"[A-Za-z]:\\\\.*powershell\\.exe\" -EncodedCommand .*"),
+                RunCommand.commandLine(powershell, "dir", false));
     }
 }

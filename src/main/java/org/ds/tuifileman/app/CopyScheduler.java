@@ -9,6 +9,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.ToIntFunction;
@@ -34,9 +35,12 @@ final class CopyScheduler {
      * the big-file thread (and should check it first, for tasks that were already taken).
      *
      * @return false when the calling thread was interrupted: the caller is then to treat the job as cancelled
+     * @throws RuntimeException the first one {@code copy} threw, once every other task has been attempted
      */
     static <T> boolean copyFiles(List<T> tasks, ToLongFunction<T> size, Consumer<T> copy, int threads,
                                  BooleanSupplier cancelled) {
+        Failures failures = new Failures();
+        Consumer<T> safeCopy = failures.guard(copy);
         List<T> small = new ArrayList<>();
         List<T> big = new ArrayList<>();
         for (T task : tasks) {
@@ -46,7 +50,7 @@ final class CopyScheduler {
         // keeps the disk busier than one kind after the other.
         Thread bigWorker = new Thread(() -> {
             for (T task : big) {
-                copy.accept(task);
+                safeCopy.accept(task);
             }
         }, "copy-big");
         bigWorker.setDaemon(true);
@@ -54,7 +58,7 @@ final class CopyScheduler {
         ExecutorService pool = newPool(threads);
         try {
             for (T task : small) {
-                pool.execute(() -> copy.accept(task));
+                pool.execute(() -> safeCopy.accept(task));
             }
             pool.shutdown();
             while (!pool.awaitTermination(100, TimeUnit.MILLISECONDS)) {
@@ -63,10 +67,38 @@ final class CopyScheduler {
                 }
             }
             bigWorker.join();
+            failures.rethrow();
             return true;
         } catch (InterruptedException e) {
             pool.shutdownNow();
             return false;
+        }
+    }
+
+    /**
+     * Keeps the first exception of a task, so that one failing file neither ends a worker thread (the files behind it
+     * would silently never be copied) nor goes unreported: it is thrown once every lane is done.
+     */
+    private static final class Failures {
+        private final AtomicReference<RuntimeException> first = new AtomicReference<>();
+
+        <T> Consumer<T> guard(Consumer<T> copy) {
+            return task -> {
+                try {
+                    copy.accept(task);
+                } catch (RuntimeException e) {
+                    if (!first.compareAndSet(null, e)) {
+                        first.get().addSuppressed(e);
+                    }
+                }
+            };
+        }
+
+        void rethrow() {
+            RuntimeException failure = first.get();
+            if (failure != null) {
+                throw failure;
+            }
         }
     }
 
@@ -82,11 +114,12 @@ final class CopyScheduler {
         private final BooleanSupplier cancelled;
         private final ExecutorService pool;
         private final BlockingQueue<Object> big = new LinkedBlockingQueue<>();
+        private final Failures failures = new Failures();
         private final Thread bigWorker;
 
         Feed(ToLongFunction<T> size, Consumer<T> copy, int threads, BooleanSupplier cancelled) {
             this.size = size;
-            this.copy = copy;
+            this.copy = failures.guard(copy);
             this.cancelled = cancelled;
             this.pool = newPool(threads);
             this.bigWorker = new Thread(this::takeBig, "copy-big");
@@ -117,6 +150,7 @@ final class CopyScheduler {
          * No more tasks: waits until every submitted one has finished.
          *
          * @return false when the calling thread was interrupted: the caller is then to treat the job as cancelled
+         * @throws RuntimeException the first one a task threw, once all the others have run
          */
         boolean finish() {
             big.add(END);
@@ -128,6 +162,7 @@ final class CopyScheduler {
                     }
                 }
                 bigWorker.join();
+                failures.rethrow();
                 return true;
             } catch (InterruptedException e) {
                 pool.shutdownNow();

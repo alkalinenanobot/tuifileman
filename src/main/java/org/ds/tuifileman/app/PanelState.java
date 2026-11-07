@@ -1,6 +1,7 @@
 package org.ds.tuifileman.app;
 
 import org.ds.tuifileman.fs.Archives;
+import org.ds.tuifileman.fs.Entries;
 import org.ds.tuifileman.model.DirectoryListing;
 import org.ds.tuifileman.model.EntrySort;
 import org.ds.tuifileman.model.FileEntry;
@@ -112,7 +113,7 @@ public final class PanelState {
         try {
             root = Archives.open(file);
         } catch (IOException | RuntimeException e) {
-            return "Cannot open " + name + ": " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            return "Cannot open " + name + ": " + Entries.message(e);
         }
         Path previous = directory;
         directory = root;
@@ -244,7 +245,7 @@ public final class PanelState {
             if (e instanceof java.nio.file.NoSuchFileException) {
                 return "Directory no longer exists";
             }
-            return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            return Entries.message(e);
         }
         Set<Path> present = new LinkedHashSet<>();
         for (FileEntry entry : entries) {

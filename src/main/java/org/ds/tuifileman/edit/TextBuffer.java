@@ -1,6 +1,7 @@
 package org.ds.tuifileman.edit;
 
 import org.ds.tuifileman.compare.TextCompare;
+import org.ds.tuifileman.fs.AtomicFile;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -55,6 +56,8 @@ public final class TextBuffer {
     private boolean bom;
     private String eol = System.lineSeparator();
     private boolean finalNewline = true;
+    /** The text was exactly one line break: an empty-looking document that is not an empty file. */
+    private boolean loneNewline;
     private boolean mixedEol;
     private int groupDepth;
     private List<Edit> openGroup;
@@ -117,6 +120,7 @@ public final class TextBuffer {
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(bytes).toString();
         } catch (CharacterCodingException e) {
             charset = TextCompare.fallbackCharset();
+            bom = false;
             text = new String(data, offset, data.length - offset, charset);
         }
         split(text);
@@ -150,6 +154,7 @@ public final class TextBuffer {
         if (start < length || lines.isEmpty()) {
             lines.add(text.substring(start));
         }
+        loneNewline = length > 0 && start == length && lines.size() == 1 && lines.get(0).isEmpty();
         mixedEol = (crlf > 0 ? 1 : 0) + (lf > 0 ? 1 : 0) + (cr > 0 ? 1 : 0) > 1;
         if (crlf > 0 && crlf >= lf && crlf >= cr) {
             eol = "\r\n";
@@ -490,7 +495,7 @@ public final class TextBuffer {
     /** Writes the document; returns the number of bytes written. */
     public int save(Path path) throws IOException {
         byte[] bytes = encode();
-        Files.write(path, bytes);
+        AtomicFile.write(path, bytes);
         sealed = true;
         savedTop = undoStack.peek();
         stamp(path);
@@ -505,7 +510,8 @@ public final class TextBuffer {
             }
             text.append(lines.get(i));
         }
-        boolean empty = lines.size() == 1 && lines.get(0).isEmpty();
+        // A file that is one line break stays one until the user edits it; an emptied document is an empty file.
+        boolean empty = lines.size() == 1 && lines.get(0).isEmpty() && !(loneNewline && undoStack.isEmpty());
         if (finalNewline && !empty) {
             text.append(eol);
         }

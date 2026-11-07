@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Pattern;
 
 /**
  * {@code *} and {@code ?} in the last path segment, expanded by the tool itself because neither cmd nor
@@ -45,11 +44,11 @@ final class Wildcards {
             } catch (IOException e) {
                 throw new Args.UsageException(e.getMessage());
             }
-            Pattern regex = compile(name);
+            Glob.Compiled matcher = compile(name);
             List<Path> found = new ArrayList<>();
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(parent)) {
                 for (Path path : stream) {
-                    if (regex.matcher(path.getFileName().toString()).matches()) {
+                    if (matcher.matches(path.getFileName().toString())) {
                         found.add(path);
                     }
                 }
@@ -66,7 +65,7 @@ final class Wildcards {
         }
     }
 
-    private static Pattern compile(String glob) {
+    private static Glob.Compiled compile(String glob) {
         boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
         return Glob.compile(glob, windows);
     }

@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import org.ds.tuifileman.fs.SystemTools;
 
 /**
  * The system clipboard through external tools; every failure just means "not available" and the editor keeps its
@@ -19,8 +20,8 @@ import java.util.function.Predicate;
  */
 public final class SystemClipboard {
     private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase().contains("win");
-    private static final List<String> POWERSHELL_PASTE = List.of("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-            "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Console]::Out.Write((Get-Clipboard -Raw))");
+    private static final String POWERSHELL_SCRIPT =
+            "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Console]::Out.Write((Get-Clipboard -Raw))";
 
     /** {@code windows}: clip.exe wants UTF-16 with CRLF and PowerShell answers with CRLF. */
     record Tool(List<String> copy, List<String> paste, boolean windows) { }
@@ -30,9 +31,14 @@ public final class SystemClipboard {
 
     private SystemClipboard() { }
 
+    private static List<String> powershellPaste(String powershell) {
+        return List.of(powershell, "-NoProfile", "-NonInteractive", "-Command", POWERSHELL_SCRIPT);
+    }
+
+    /** {@code windows}: this is Windows itself (full paths, the working folder must not decide); else Linux, maybe WSL. */
     static Tool choose(boolean windows, Predicate<String> onPath, String wayland, String display) {
         if (windows) {
-            return new Tool(List.of("clip.exe"), POWERSHELL_PASTE, true);
+            return new Tool(List.of(SystemTools.system32("clip.exe")), powershellPaste(SystemTools.powershell()), true);
         }
         if (wayland != null && !wayland.isEmpty() && onPath.test("wl-copy") && onPath.test("wl-paste")) {
             return new Tool(List.of("wl-copy"), List.of("wl-paste", "--no-newline"), false);
@@ -47,7 +53,7 @@ public final class SystemClipboard {
             }
         }
         if (onPath.test("clip.exe") && onPath.test("powershell.exe")) {
-            return new Tool(List.of("clip.exe"), POWERSHELL_PASTE, true);
+            return new Tool(List.of("clip.exe"), powershellPaste("powershell.exe"), true);
         }
         return null;
     }
