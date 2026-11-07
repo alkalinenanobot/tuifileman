@@ -167,6 +167,8 @@ final class SyncCommand implements Cli.Command {
                 ignore = DiffCommand.ignores(args, left, right);
             } catch (Args.UsageException e) {
                 return fail(err, Exit.USAGE, e.getMessage());
+            } catch (IOException e) {
+                return fail(err, Exit.FATAL, e.getMessage());
             }
             List<Item> scanned;
             Queue<DirCompare.Unreadable> missed = new ConcurrentLinkedQueue<>();

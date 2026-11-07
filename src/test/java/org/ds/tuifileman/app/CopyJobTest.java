@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.ds.tuifileman.app.CopyJob.Conflict;
 import org.ds.tuifileman.app.CopyJob.ConflictResolver;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -188,14 +190,50 @@ class CopyJobTest {
     }
 
     @Test
-    void sourcesDifferingOnlyInLetterCaseClashOnACaseInsensitiveSystem() throws Exception {
-        assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("win"));
+    void sourcesDifferingOnlyInLetterCaseClashWhereTheDestinationIgnoresCase() throws Exception {
         Path first = file(root, "one/x.txt", "first");
         Path second = file(root, "two/X.txt", "second");
+        boolean ignoresCase = caseInsensitive(dst());
         CopyJob job = run(true, always(Conflict.OVERWRITE_ALL), first, second);
-        assertEquals(Map.of("x.txt", "first"), tree(dst()));
-        assertEquals(1, job.errors().size(), job.errors().toString());
-        assertEquals("second", Files.readString(second));
+        if (ignoresCase) {
+            assertEquals(Map.of("x.txt", "first"), tree(dst()));
+            assertEquals(1, job.errors().size(), job.errors().toString());
+            assertEquals("second", Files.readString(second));
+        } else {
+            assertEquals(Map.of("x.txt", "first", "X.txt", "second"), tree(dst()));
+            assertTrue(job.errors().isEmpty(), job.errors().toString());
+        }
+    }
+
+    @Test
+    void aCaseSensitiveWindowsFolderTakesBothSpellings() throws Exception {
+        assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("win"));
+        Process fsutil = new ProcessBuilder("fsutil.exe", "file", "setCaseSensitiveInfo", dst().toString(), "enable")
+                .redirectErrorStream(true).start();
+        fsutil.getInputStream().readAllBytes();
+        assumeTrue(fsutil.waitFor() == 0, "per-folder case sensitivity is not available");
+        Path first = file(root, "one/x.txt", "first");
+        Path second = file(root, "two/X.txt", "second");
+        CopyJob job = run(false, always(Conflict.CANCEL), first, second);
+        assertTrue(job.errors().isEmpty(), job.errors().toString());
+        assertEquals(Map.of("x.txt", "first", "X.txt", "second"), tree(dst()));
+    }
+
+    /** Whether the folder treats names that differ only in letter case as one file, found out with a file. */
+    private static boolean caseInsensitive(Path dir) throws Exception {
+        Path probe = file(dir, "case-probe", "x");
+        try {
+            return Files.exists(dir.resolve("CASE-PROBE"));
+        } finally {
+            Files.delete(probe);
+        }
+    }
+
+    /** {@code link} is a symbolic link or junction (not a folder of its own) that leads to {@code target}. */
+    private static void assertLinkTo(Path target, Path link) throws Exception {
+        BasicFileAttributes attrs = Files.readAttributes(link, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        assertTrue(attrs.isSymbolicLink() || attrs.isOther(), link + " is a link");
+        assertEquals(target.toRealPath(), link.toRealPath());
     }
 
     @Test
@@ -228,8 +266,10 @@ class CopyJobTest {
         directoryLink(src().resolve("tree/other"), elsewhere);
         CopyJob job = run(false, always(Conflict.CANCEL), src().resolve("tree"));
         assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertEquals(Map.of("tree", "<dir>", "tree/a.txt", "A", "tree/loop", "<dir>", "tree/other", "<dir>"),
+        assertEquals(Map.of("tree", "<dir>", "tree/a.txt", "A", "tree/loop", "<link>", "tree/other", "<link>"),
                 tree(dst()));
+        assertLinkTo(src().resolve("tree"), dst().resolve("tree/loop"));
+        assertLinkTo(elsewhere, dst().resolve("tree/other"));
 
         // a link as the source itself: the link is copied, not the folder behind it
         Path link = directoryLink(src().resolve("link"), elsewhere);
@@ -237,15 +277,17 @@ class CopyJobTest {
         CopyJob single = new CopyJob(entries(link), top, false, always(Conflict.CANCEL));
         single.run();
         assertTrue(single.errors().isEmpty(), single.errors().toString());
-        assertEquals(Map.of("link", "<dir>"), tree(top));
-        // JUnit's cleanup cannot walk a Windows junction loop: remove the links first
-        Files.delete(link);
-        Files.delete(src().resolve("tree/loop"));
-        Files.delete(src().resolve("tree/other"));
+        assertEquals(Map.of("link", "<link>"), tree(top));
+        assertLinkTo(elsewhere, top.resolve("link"));
+        // JUnit's cleanup walks into a Windows junction (and around a loop): remove the links first
+        for (Path made : List.of(link, src().resolve("tree/loop"), src().resolve("tree/other"),
+                dst().resolve("tree/loop"), dst().resolve("tree/other"), top.resolve("link"))) {
+            Files.delete(made);
+        }
     }
 
     @Test
-    void movingAFolderWithLinksRemovesTheLinksButNeverWhatTheyPointTo() throws Exception {
+    void movingAFolderWithLinksMovesTheLinksButNeverWhatTheyPointTo() throws Exception {
         file(src(), "tree/a.txt", "A");
         Path elsewhere = dir(root, "elsewhere");
         file(elsewhere, "secret.txt", "S");
@@ -254,10 +296,13 @@ class CopyJobTest {
         file(dst(), "tree/keep.txt", "K"); // an existing target folder: copy and delete instead of one rename
         CopyJob job = run(true, always(Conflict.CANCEL), src().resolve("tree"));
         assertTrue(job.errors().isEmpty(), job.errors().toString());
-        assertFalse(Files.exists(src().resolve("tree"), java.nio.file.LinkOption.NOFOLLOW_LINKS));
+        assertFalse(Files.exists(src().resolve("tree"), LinkOption.NOFOLLOW_LINKS));
         assertEquals(Map.of("secret.txt", "S"), tree(elsewhere));
-        assertEquals(Map.of("tree", "<dir>", "tree/a.txt", "A", "tree/keep.txt", "K", "tree/loop", "<dir>",
-                "tree/other", "<dir>"), tree(dst()));
+        assertEquals(Map.of("tree", "<dir>", "tree/a.txt", "A", "tree/keep.txt", "K", "tree/loop", "<link>",
+                "tree/other", "<link>"), tree(dst()));
+        assertLinkTo(elsewhere, dst().resolve("tree/other"));
+        Files.delete(dst().resolve("tree/loop"));
+        Files.delete(dst().resolve("tree/other"));
     }
 
     @Test

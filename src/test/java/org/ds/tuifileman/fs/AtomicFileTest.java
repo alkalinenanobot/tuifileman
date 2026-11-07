@@ -6,9 +6,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.BasicFileAttributeView;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.UserDefinedFileAttributeView;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
@@ -94,5 +105,97 @@ class AtomicFileTest {
         AtomicFile.write(link, "new".getBytes(StandardCharsets.UTF_8));
         assertTrue(Files.isSymbolicLink(link), "the link is still a link");
         assertEquals("new", Files.readString(real));
+    }
+
+    @Test
+    void onWindowsTheAclAttributesStreamsAndCreationTimeStay() throws Exception {
+        Assumptions.assumeTrue(WindowsFiles.available(), "Windows only");
+        Path file = dir.resolve("kept.txt");
+        Files.writeString(file, "old");
+        AclFileAttributeView acl = Files.getFileAttributeView(file, AclFileAttributeView.class);
+        AclEntry extra = AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(Files.getOwner(file))
+                .setPermissions(AclEntryPermission.WRITE_NAMED_ATTRS).build();
+        List<AclEntry> entries = new ArrayList<>(acl.getAcl());
+        entries.add(0, extra);
+        acl.setAcl(entries);
+        Files.setAttribute(file, "dos:hidden", true);
+        Files.getFileAttributeView(file, UserDefinedFileAttributeView.class)
+                .write("note", StandardCharsets.UTF_8.encode("stream"));
+        FileTime created = FileTime.fromMillis(1_500_000_000_000L);
+        Files.getFileAttributeView(file, BasicFileAttributeView.class).setTimes(null, null, created);
+
+        AtomicFile.write(file, "new".getBytes(StandardCharsets.UTF_8));
+
+        assertEquals("new", Files.readString(file));
+        assertTrue(acl.getAcl().contains(extra), "the explicit ACL entry is kept: " + acl.getAcl());
+        assertEquals(true, Files.getAttribute(file, "dos:hidden"));
+        UserDefinedFileAttributeView streams = Files.getFileAttributeView(file, UserDefinedFileAttributeView.class);
+        ByteBuffer note = ByteBuffer.allocate(streams.size("note"));
+        streams.read("note", note);
+        assertEquals("stream", new String(note.array(), StandardCharsets.UTF_8));
+        assertEquals(created, Files.readAttributes(file, BasicFileAttributes.class).creationTime());
+        assertEquals(List.of("kept.txt"), names());
+    }
+
+    @Test
+    void onPosixThePermissionsStayAndAHardLinkKeepsSharingTheContent() throws Exception {
+        Assumptions.assumeTrue(Files.getFileStore(dir).supportsFileAttributeView("posix"), "POSIX only");
+        Path secret = dir.resolve("secret.txt");
+        Files.writeString(secret, "old");
+        Files.setPosixFilePermissions(secret, PosixFilePermissions.fromString("rw-------"));
+        Path script = dir.resolve("run.sh");
+        Files.writeString(script, "old");
+        Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwxr-x---"));
+        for (Path file : List.of(secret, script)) {
+            var before = Files.getPosixFilePermissions(file);
+            AtomicFile.write(file, "new".getBytes(StandardCharsets.UTF_8));
+            assertEquals("new", Files.readString(file));
+            assertEquals(before, Files.getPosixFilePermissions(file), file.toString());
+        }
+
+        Path other = Files.createLink(dir.resolve("other-name.txt"), secret);
+        AtomicFile.write(secret, "linked".getBytes(StandardCharsets.UTF_8));
+        assertEquals("linked", Files.readString(other), "both names still show one file");
+        assertTrue(Files.isSameFile(secret, other));
+    }
+
+    @Test
+    void onLinuxAnAclAndUserAttributesStay() throws Exception {
+        Assumptions.assumeTrue(LinuxXattrs.LINUX, "Linux only");
+        Path file = dir.resolve("shared.txt");
+        Files.writeString(file, "old");
+        Files.getFileAttributeView(file, UserDefinedFileAttributeView.class)
+                .write("note", StandardCharsets.UTF_8.encode("kept"));
+        // numeric user and group: they need not exist; setfacl is only the test's way to make an ACL
+        Process setfacl;
+        try {
+            setfacl = new ProcessBuilder("setfacl", "-m", "u:54321:r--,g:54322:rw-", file.toString())
+                    .redirectErrorStream(true).start();
+        } catch (IOException e) {
+            Assumptions.abort("setfacl is not installed");
+            return;
+        }
+        String output = new String(setfacl.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        Assumptions.assumeTrue(setfacl.waitFor() == 0, "no ACL support here: " + output);
+        String before = acl(file);
+        Assumptions.assumeTrue(before.contains("user:54321:r--"), before);
+
+        AtomicFile.write(file, "new".getBytes(StandardCharsets.UTF_8));
+
+        assertEquals("new", Files.readString(file));
+        assertEquals(before, acl(file));
+        UserDefinedFileAttributeView view = Files.getFileAttributeView(file, UserDefinedFileAttributeView.class);
+        ByteBuffer note = ByteBuffer.allocate(view.size("note"));
+        view.read("note", note);
+        assertEquals("kept", new String(note.array(), StandardCharsets.UTF_8));
+        assertEquals(List.of("shared.txt"), names());
+    }
+
+    private static String acl(Path file) throws Exception {
+        Process getfacl = new ProcessBuilder("getfacl", "-n", "--omit-header", file.toString())
+                .redirectErrorStream(true).start();
+        String output = new String(getfacl.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        getfacl.waitFor();
+        return output;
     }
 }

@@ -7,6 +7,7 @@ import com.sun.jna.WString;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.win32.StdCallLibrary;
 import com.sun.jna.win32.W32APIOptions;
+import org.ds.tuifileman.fs.WindowsFiles;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
@@ -83,8 +84,8 @@ final class NativeCopy {
             return cancel != null && cancel.getAsBoolean() ? PROGRESS_CANCEL : PROGRESS_CONTINUE;
         };
         int flags = COPY_FILE_ALLOW_DECRYPTED_DESTINATION | (overwrite ? 0 : COPY_FILE_FAIL_IF_EXISTS);
-        boolean ok = API.CopyFileExW(new WString(extended(source)), new WString(extended(target)),
-                routine, null, null, flags);
+        boolean ok = API.CopyFileExW(new WString(WindowsFiles.longPath(source)),
+                new WString(WindowsFiles.longPath(target)), routine, null, null, flags);
         if (!ok) {
             int error = Native.getLastError();
             if (progress != null && last[0] > 0) {
@@ -101,15 +102,6 @@ final class NativeCopy {
             }
             throw new IOException(describe(error));
         }
-    }
-
-    /** Win32 only accepts paths over MAX_PATH (260) when they carry the \\?\ prefix. */
-    private static String extended(Path path) {
-        String text = path.toAbsolutePath().toString();
-        if (text.length() < 240 || text.startsWith("\\\\?\\")) {
-            return text;
-        }
-        return text.startsWith("\\\\") ? "\\\\?\\UNC\\" + text.substring(2) : "\\\\?\\" + text;
     }
 
     private static String describe(int error) {

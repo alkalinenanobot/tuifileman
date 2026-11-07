@@ -59,7 +59,6 @@ final class FindCommand implements Cli.Command {
         int limit = FileSearch.UNLIMITED;
         Path root;
         List<PathMatcher> excludes;
-        IgnoreMatcher ignore;
         try {
             args.parse(arguments);
             if (args.has("help")) {
@@ -84,7 +83,6 @@ final class FindCommand implements Cli.Command {
             }
             root = root(args.positional().get(0));
             excludes = DiffCommand.excludes(args.all("exclude"));
-            ignore = DiffCommand.ignores(args, root, root);
         } catch (Args.UsageException e) {
             return Cli.usageError(COMMAND, e.getMessage());
         }
@@ -99,6 +97,14 @@ final class FindCommand implements Cli.Command {
                 err.println(err.style(Style.ERROR, "error:") + " find searches a folder or an archive; "
                         + Archives.display(root) + " is neither");
                 return Exit.USAGE;
+            }
+            IgnoreMatcher ignore;
+            try {
+                ignore = DiffCommand.ignores(args, root, root);
+            } catch (Args.UsageException e) {
+                return Cli.usageError(COMMAND, e.getMessage());
+            } catch (IOException e) {
+                return fatal(err, e.getMessage());
             }
             String text = args.get("text", "");
             FileSearch.Query query = new FileSearch.Query(root, String.join(";", args.all("name")), args.has("archives"),

@@ -1075,6 +1075,13 @@
     {
       "type": {
         "proxy": [
+          "org.ds.tuifileman.fs.WindowsFiles$Api"
+        ]
+      }
+    },
+    {
+      "type": {
+        "proxy": [
           "org.ds.tuifileman.cli.Tty$Api"
         ]
       }
@@ -1130,5 +1137,37 @@
     {
       "bundle": "multilang.lanterna-ui"
     }
-  ]
+  ],
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "long",
+        "parameterTypes": ["void*", "void*", "size_t"],
+        "options": {
+          "captureCallState": true
+        }
+      },
+      {
+        "returnType": "long",
+        "parameterTypes": ["void*", "void*", "void*", "size_t"],
+        "options": {
+          "captureCallState": true
+        }
+      },
+      {
+        "returnType": "int",
+        "parameterTypes": ["void*", "void*", "void*", "size_t", "int"],
+        "options": {
+          "captureCallState": true
+        }
+      },
+      {
+        "returnType": "int",
+        "parameterTypes": ["void*", "void*"],
+        "options": {
+          "captureCallState": true
+        }
+      }
+    ]
+  }
 }

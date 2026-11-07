@@ -145,6 +145,8 @@ final class DiffCommand implements Cli.Command {
             ignore = ignores(args, left, right);
         } catch (Args.UsageException e) {
             return Cli.usageError(COMMAND, e.getMessage());
+        } catch (IOException e) {
+            return fatal(err, e.getMessage());
         }
         List<Item> scanned;
         Queue<Unreadable> unreadable = new ConcurrentLinkedQueue<>();
@@ -401,25 +403,30 @@ final class DiffCommand implements Cli.Command {
         }
     }
 
-    /** The matcher for {@code --ignore-file} and {@code --gitignore}; {@link IgnoreMatcher#NONE} when neither is given. */
-    static IgnoreMatcher ignores(Args args, Path left, Path right) throws Args.UsageException {
+    /**
+     * The matcher for {@code --ignore-file} and {@code --gitignore}; {@link IgnoreMatcher#NONE} when neither is given.
+     *
+     * @throws Args.UsageException an {@code --ignore-file} that does not exist or is a folder
+     * @throws IOException an ignore file (given or a root {@code .gitignore}) that exists but cannot be read
+     */
+    static IgnoreMatcher ignores(Args args, Path left, Path right) throws Args.UsageException, IOException {
         List<Path> files = new ArrayList<>();
         for (String text : args.all("ignore-file")) {
             try {
                 Path file = Path.of(text).toAbsolutePath().normalize();
-                if (!Files.isRegularFile(file)) {
+                // not !isRegularFile: it is also false for a file that exists but cannot be looked at
+                if (Files.notExists(file)) {
                     throw new Args.UsageException("--ignore-file: no such file: " + file);
+                }
+                if (Files.isDirectory(file)) {
+                    throw new Args.UsageException("--ignore-file: not a file: " + file);
                 }
                 files.add(file);
             } catch (InvalidPathException e) {
                 throw new Args.UsageException("--ignore-file: invalid path: " + text);
             }
         }
-        try {
-            return IgnoreMatcher.git(files, args.has("gitignore"), left, right);
-        } catch (IOException e) {
-            throw new Args.UsageException("--ignore-file: cannot read: " + e.getMessage());
-        }
+        return IgnoreMatcher.git(files, args.has("gitignore"), left, right);
     }
 
     static List<PathMatcher> excludes(List<String> globs) throws Args.UsageException {

@@ -2,13 +2,15 @@ package org.ds.tuifileman;
 
 import org.ds.tuifileman.model.FileEntry;
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.stream.Stream;
 
 /** Small helpers to build folder trees for the engine tests and to compare them afterwards. */
 public final class Fixtures {
@@ -85,18 +87,45 @@ public final class Fixtures {
         return () -> view.setAcl(before);
     }
 
-    /** Every file and folder below {@code root}: relative path (forward slashes) to content, "<dir>" for folders. */
+    /**
+     * Every file and folder below {@code root}: relative path (forward slashes) to content, "<dir>" for folders,
+     * "<link>" for a symbolic link or junction, which is not followed.
+     */
     public static Map<String, String> tree(Path root) throws IOException {
         Map<String, String> result = new TreeMap<>();
-        try (Stream<Path> stream = Files.walk(root)) {
-            for (Path path : (Iterable<Path>) stream::iterator) {
-                if (path.equals(root)) {
-                    continue;
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (dir.equals(root)) {
+                    return FileVisitResult.CONTINUE;
                 }
-                String name = root.relativize(path).toString().replace('\\', '/');
-                result.put(name, Files.isDirectory(path) ? "<dir>" : Files.readString(path));
+                boolean link = attrs.isOther();
+                result.put(name(dir), link ? "<link>" : "<dir>");
+                return link ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
             }
-        }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                result.put(name(file), attrs.isSymbolicLink() || attrs.isOther() ? "<link>" : Files.readString(file));
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException error) throws IOException {
+                // a junction whose folder is gone cannot be opened (the walker opens folders before asking)
+                BasicFileAttributes attrs = Files.readAttributes(file, BasicFileAttributes.class,
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS);
+                if (!attrs.isOther()) {
+                    throw error;
+                }
+                result.put(name(file), "<link>");
+                return FileVisitResult.CONTINUE;
+            }
+
+            private String name(Path path) {
+                return root.relativize(path).toString().replace('\\', '/');
+            }
+        });
         return result;
     }
 

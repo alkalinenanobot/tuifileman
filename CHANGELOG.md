@@ -1,25 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 Fixes from a code audit.
 
+- The jar needs Java 25 (was 17); the native release builds need no Java at all.
 - `move`/`copy`: two sources that would end up with the same name in the destination no longer replace each other
-  (the second one is reported, its source stays). A rename never replaces a file that appeared after planning.
-- Windows junctions (and other folder links) inside a copied or moved tree are copied as links, never followed, so a
-  loop link cannot fill the disk and a move no longer turns a link into a deep copy.
+  (the second one is reported, its source stays). Whether `A.txt` and `a.txt` are the same name is asked of the
+  destination folder itself (a case-sensitive Windows folder or Linux disk takes both; a FAT or SMB mount on Linux
+  does not). A rename never replaces a file that appeared after planning.
+- Windows junctions (and other folder links) inside a copied or moved tree are copied as junctions pointing to the
+  same folder, never followed, so a loop link cannot fill the disk and a move no longer turns a link into a deep copy
+  or an empty folder. Reparse-point folders that hold content of their own (cloud placeholder folders) are still
+  copied with their content.
 - A failed or crashed file copy keeps its source in a move; a move counts each item once (summary, progress, JSON).
 - Archives: entry names with a backslash or a drive letter can no longer write outside the temporary folder. A nested
   archive is extracted once and its temporary copy is deleted on close; extraction checks the free space first.
 - `sync --plan`: a plan's `only-left`/`only-right`/`left-newer`/`right-newer` verdicts are recomputed from the current
   files (an old plan can no longer delete or overwrite a file that is now on both sides). A path that goes through a
   link, or a path listed twice, is refused. Names that differ only in case stay two files on a case-sensitive disk.
-- `sync`/`diff` with `.gitignore` rules stop with an error when a nested `.gitignore` cannot be read, instead of
-  syncing as if it had no rules. The sync screen no longer runs the previous result after a failed rescan.
+- `sync`/`diff`/`find` with `.gitignore` rules stop with an error when a nested `.gitignore` cannot be read, instead of
+  syncing as if it had no rules. An ignore file that exists but cannot be read (`--ignore-file`, or the root
+  `.gitignore` with `-g`) is an I/O error (exit 4); an `--ignore-file` that does not exist stays a usage error
+  (exit 2). The sync screen no longer runs the previous result after a failed rescan.
 - The editor, `config.ini`, bookmarks, last folders and run history are written to a temporary file and moved over the
-  old one, so a full disk or a kill cannot leave them empty. A file that holds only a line break is saved unchanged;
-  a BOM is not written in front of text that fell back to ANSI; a BOM at the start of `config.ini` no longer
-  duplicates its first section.
+  old one, so a full disk or a kill cannot leave them empty. An existing file keeps its permissions (set before any
+  byte is written), owner, group and extended attributes; on Linux every extended attribute is copied through libc,
+  so a POSIX ACL, an SELinux label and file capabilities stay too. On Windows ReplaceFile keeps its ACL, attributes,
+  alternate streams and creation time. A file with several hard links, or one whose owner or attributes cannot be
+  given to a new file, is rewritten in place instead.
+  A file that holds only a line break is saved unchanged; a BOM is not written in front of text that fell back to
+  ANSI; a BOM at the start of `config.ini` no longer duplicates its first section.
 - File name patterns use a linear matcher: `find --name "*a*b*c*d*e*"` no longer takes minutes on long names.
 - Windows: external tools (chafa, ffmpeg, pdftoppm, clipboard, shells) start by full path, so a program of the same
   name in the folder you are browsing is not run instead.

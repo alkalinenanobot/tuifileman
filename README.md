@@ -1,6 +1,6 @@
 # tuifileman
 
-A two-panel terminal file manager in Java 17+, built on
+A two-panel terminal file manager in Java 25+, built on
 [Lanterna](https://github.com/mabe02/lanterna) 3.2.0-alpha1 (no Swing window). Runs in
 Windows Terminal / PowerShell (native Windows console backend) and in Linux terminals, with RGB colors,
 mouse support and real filesystem browsing. Release builds (Windows and Linux x64, single native
@@ -50,14 +50,14 @@ licences and this README.
   `tuifileman` on your PATH, e.g. into `~/.local/bin`. The binary links dynamically against glibc; if an older
   distribution reports `GLIBC_x.y not found`, use the jar instead.
 - **Other platforms**: build the fat jar with `mvn package` (see [Build](#build-maven--netbeans)) and run it on
-  a JDK 17+.
+  a JDK 25+.
 
 Then:
 
 ```powershell
 tuifileman                                   # file manager; both panels open where they were last time
 tuifileman D:\src D:\backup                  # optional start folders: tuifileman [left [right]]
-java -jar target\tuifileman-0.8.0.jar        # the same from the jar
+java -jar target\tuifileman-0.9.0.jar        # the same from the jar
 tuifileman diff D:\a D:\b                    # command line mode, see below
 ```
 
@@ -415,8 +415,10 @@ tuifileman help copy                            # all options
   summaries count them. A plan fed to `sync --plan` may list ignored entries only as `skip`; any other
   action is an error. `--gitignore` does not skip `.git` (it is compared like any folder); use
   `-g -x .git` to leave it out. The `.gitignore` files are compared like any other file. A malformed
-  pattern line is skipped. `--stats` reports an `ignored` count. The ignore options cannot be combined
-  with `sync --plan`. In the TUI sync view `G` toggles the `.gitignore` rules and
+  pattern line is skipped. An `--ignore-file` that does not exist is a usage error (exit 2); an ignore file
+  that exists but cannot be read (also a `.gitignore` in either tree) stops the run as a fatal error
+  (exit 4) before anything is changed. `--stats` reports an `ignored` count. The ignore options cannot be
+  combined with `sync --plan`. In the TUI sync view `G` toggles the `.gitignore` rules and
   `I` shows or hides the ignored rows.
 - Every real `sync` asks first on a terminal (it lists the deletions) and needs `-y/--yes` without one.
   `-n` prints the plan; as `-f jsonl` each line is `{"action":"to-right|to-left|delete-left|delete-right|skip",
@@ -456,13 +458,13 @@ tuifileman help copy                            # all options
 
 ## Build (Maven / NetBeans)
 
-Needs a JDK 17+ and Maven. The console backend is JNA with the Win32 API on Windows and Lanterna's stty-based
+Needs a JDK 25+ and Maven. The console backend is JNA with the Win32 API on Windows and Lanterna's stty-based
 terminal on Linux.
 
 ```powershell
-mvn package                                  # fat jar: target\tuifileman-0.8.0.jar (runs the JUnit tests first)
+mvn package                                  # fat jar: target\tuifileman-0.9.0.jar (runs the JUnit tests first)
 mvn test                                     # tests only
-java -jar target\tuifileman-0.8.0.jar
+java -jar target\tuifileman-0.9.0.jar
 .\native\native.ps1 -Build                   # GraalVM native exe from the fat jar: target\dist\tuifileman.exe (single file)
 .\native\package.ps1                         # release zip + SHA-256 in target\release
 ```

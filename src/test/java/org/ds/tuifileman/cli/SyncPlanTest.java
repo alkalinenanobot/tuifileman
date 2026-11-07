@@ -11,6 +11,8 @@ import org.ds.tuifileman.UnreadableFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -173,5 +175,36 @@ class SyncPlanTest {
         }
         assertTrue(Files.exists(dir.resolve("b/sub/protected.keep")), "rules that vanished must not delete");
         assertFalse(Files.exists(dir.resolve("b/new.txt")), "nothing is copied either");
+    }
+
+    @Test
+    void aMissingIgnoreFileIsAUsageErrorAnUnreadableOneAnIoError() throws Exception {
+        Cmd.file(dir, "a/x.txt", "x");
+        Cmd.file(dir, "b/x.txt", "x");
+        Cmd.Result missing = Cmd.run("diff", "-q", "--ignore-file", dir.resolve("nope").toString(),
+                left().toString(), right().toString());
+        assertEquals(2, missing.exit(), missing.err());
+
+        Path given = Cmd.file(dir, "my.rules", "*.tmp\n");
+        Path rootRules = Cmd.file(dir, "a/.gitignore", "*.tmp\n");
+        for (Path rules : List.of(given, rootRules)) {
+            try (AutoCloseable locked = UnreadableFile.lock(rules)) {
+                assumeTrue(locked != null, "the user can read any file (root)");
+                for (String command : List.of("diff", "sync", "find")) {
+                    List<String> arguments = new ArrayList<>(List.of(command, "-q"));
+                    arguments.addAll(rules.equals(given) ? List.of("--ignore-file", given.toString()) : List.of("-g"));
+                    arguments.add(left().toString());
+                    if (!command.equals("find")) {
+                        arguments.add(right().toString());
+                    }
+                    if (command.equals("sync")) {
+                        arguments.add("--dry-run");
+                    }
+                    Cmd.Result result = Cmd.run(arguments.toArray(String[]::new));
+                    assertEquals(4, result.exit(), command + " " + rules + ": " + result.err());
+                    assertTrue(result.err().contains(rules.toString()), result.err());
+                }
+            }
+        }
     }
 }

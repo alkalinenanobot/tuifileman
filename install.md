@@ -79,7 +79,7 @@ Do not run `install-aliases` (it creates `tfm-*.exe` hard links, or copies with 
   browser may carry a "downloaded from the internet" mark; `Unblock-File` on the exe removes it. Tell the user
   before doing so.
 - Other platforms (arm64, macOS, Linux with an older glibc): there is no native build. Say so, and offer a source
-  build: a JDK 17+ and Maven, `mvn package`, then `java -jar target/tuifileman-<version>.jar`. That jar is for
+  build: a JDK 25+ and Maven, `mvn package`, then `java -jar target/tuifileman-<version>.jar`. That jar is for
   local use; it is not a release asset.
 - Upgrade: repeat the steps with the new release and update the version in the memory note. Uninstall: delete the
   install folder (Windows) or the binary and `~/.local/share/tuifileman` (Linux), remove the PATH entry you added,

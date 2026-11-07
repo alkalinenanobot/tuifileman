@@ -4,6 +4,7 @@ import org.ds.tuifileman.compare.TimeTolerance;
 import org.ds.tuifileman.fs.Archives;
 import org.ds.tuifileman.fs.Entries;
 import org.ds.tuifileman.fs.Parallel;
+import org.ds.tuifileman.fs.WindowsFiles;
 import org.ds.tuifileman.model.FileEntry;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
@@ -56,10 +57,6 @@ public final class CopyJob implements Job {
      */
     static final String APPEARED =
             "Target already exists (another name differing only in letter case, or created meanwhile)";
-
-    /** Windows and macOS file systems are case-insensitive by default: "A.txt" and "a.txt" are one target there. */
-    private static final boolean CASE_INSENSITIVE = System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
-            .matches(".*(win|mac).*");
 
     /** The newer-than check of "overwrite older" ignores differences up to this many milliseconds. */
     private long timeToleranceMillis = TimeTolerance.DEFAULT_MILLIS;
@@ -291,6 +288,8 @@ public final class CopyJob implements Job {
         Queue<FileTask> foundFiles = new ConcurrentLinkedQueue<>();
         Queue<FileTask> conflicts = new ConcurrentLinkedQueue<>();
         Set<String> targets = new HashSet<>();
+        // "A.txt" and "a.txt" are one target where the destination's file system ignores the letter case
+        boolean ignoreCase = Entries.ignoresCase(destination);
         for (int top = 0; top < sources.size() && !cancelled; top++) {
             Path source = sources.get(top);
             String name;
@@ -310,13 +309,13 @@ public final class CopyJob implements Job {
                 incomplete[top] = true;
                 continue;
             }
-            if (!targets.add(targetKey(target))) {
+            if (!targets.add(ignoreCase ? target.toString().toLowerCase(Locale.ROOT) : target.toString())) {
                 errors.add(new Problem(source.toString(), "A file with this name is already being "
                         + (move ? "moved" : "copied") + " here"));
                 incomplete[top] = true;
                 continue;
             }
-            boolean directory = Entries.isPlainDirectory(attrs);
+            boolean directory = isFolder(source, attrs);
             if (move && target.equals(source) && !source.getFileName().toString().equals(name)) {
                 // only the letter case changes (a.txt -> A.txt on a case-insensitive file system)
                 renames.add(new Path[] {source, target});
@@ -398,6 +397,15 @@ public final class CopyJob implements Job {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    /**
+     * A folder that is descended into and copied entry by entry: a real folder, and also a Windows reparse point
+     * that holds content of its own (a cloud placeholder folder) rather than naming another folder like a junction.
+     */
+    private static boolean isFolder(Path path, BasicFileAttributes attrs) {
+        return Entries.isPlainDirectory(attrs)
+                || attrs.isDirectory() && attrs.isOther() && WindowsFiles.holdsContent(path);
     }
 
     private static boolean isLink(Path path) {
@@ -503,8 +511,8 @@ public final class CopyJob implements Job {
                     boolean exists = targetExists && (existing == null
                             || existing.contains(name.toLowerCase(Locale.ROOT)))
                             && Files.exists(to, LinkOption.NOFOLLOW_LINKS);
-                    // A junction or other reparse point is copied as a link, never descended into.
-                    if (Entries.isPlainDirectory(attrs)) {
+                    // A junction or other link is copied as a link, never descended into.
+                    if (isFolder(path, attrs)) {
                         if (exists && !Files.isDirectory(to)) {
                             errors.add(new Problem(to.toString(), "A file with this name already exists"));
                             incomplete[top] = true;
@@ -711,7 +719,12 @@ public final class CopyJob implements Job {
 
     private void transfer(FileTask task) throws IOException {
         if (task.link()) {
-            if (task.replace()) {
+            BasicFileAttributes attrs = Files.readAttributes(task.source(), BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (attrs.isDirectory() && attrs.isOther()) {
+                // Files.copy would turn a junction into an empty ordinary folder
+                WindowsFiles.copyJunction(task.source(), task.target(), task.replace());
+            } else if (task.replace()) {
                 Files.copy(task.source(), task.target(), StandardCopyOption.REPLACE_EXISTING,
                         StandardCopyOption.COPY_ATTRIBUTES, LinkOption.NOFOLLOW_LINKS);
             } else {
@@ -776,9 +789,5 @@ public final class CopyJob implements Job {
     private static String entryName(Path path) throws IOException {
         String name = path.getFileName().toString();
         return Archives.isVirtual(path) ? Archives.safeEntryName(name) : name;
-    }
-
-    private static String targetKey(Path target) {
-        return CASE_INSENSITIVE ? target.toString().toLowerCase(Locale.ROOT) : target.toString();
     }
 }
