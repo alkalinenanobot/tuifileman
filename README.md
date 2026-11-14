@@ -87,6 +87,7 @@ The panel title shows the drive and its volume label; the path line shortens lon
 | letters | Quick search: prefix match first, then "contains". `Up`/`Down` step through matches, `Backspace` edits, `Esc` clears; any other key ends the search and acts normally |
 | `Space` / `Insert` | Mark and move down / mark in place |
 | `*` / `Alt+*` | Invert the marks of all entries, folders included / of files only |
+| `Alt+S` / `Alt+A` | Measure the marked folders (or the one under the cursor) / every folder of the panel: the total size replaces `<DIR>` in the size column, the message line shows the sum with file and folder counts, and a sort by size orders the measured folders. Marked folders count in the footer's selected size. The sizes stay until the panel is reloaded (`Ctrl+R`, a file operation, another folder). Links are not followed |
 | `Ctrl+R` | Refresh |
 | `Alt+F1` / `Alt+F2`, click on a panel title | Change the drive of the left / right panel; the last directory of each drive is remembered |
 | `Ctrl+L` | Go to a typed path |

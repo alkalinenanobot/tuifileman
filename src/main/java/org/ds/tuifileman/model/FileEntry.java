@@ -8,15 +8,26 @@ import java.util.Locale;
 
 /**
  * One directory entry. {@code link} marks symlinks and junctions (type/size/date are the target's);
- * {@code attributes} is the four-character flag string from {@link #attributeFlags}.
+ * {@code attributes} is the four-character flag string from {@link #attributeFlags}. A folder's {@code size} is
+ * 0 until it has been measured: {@code sized} then says that {@code size} is the total of everything below it.
  */
 public record FileEntry(String name, Path path, boolean directory, long size, FileTime modified,
-        boolean link, String attributes) {
+        boolean link, String attributes, boolean sized) {
     private static final DateTimeFormatter MODIFIED_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
 
     public FileEntry(String name, Path path, boolean directory, long size, FileTime modified) {
-        this(name, path, directory, size, modified, false, "");
+        this(name, path, directory, size, modified, false, "", false);
+    }
+
+    public FileEntry(String name, Path path, boolean directory, long size, FileTime modified,
+            boolean link, String attributes) {
+        this(name, path, directory, size, modified, link, attributes, false);
+    }
+
+    /** This folder with its measured total size. */
+    public FileEntry withTreeSize(long total) {
+        return new FileEntry(name, path, directory, total, modified, link, attributes, true);
     }
 
     /** Read-only, hidden, system, archive as "rhsa" with '-' for unset flags. */
@@ -29,7 +40,7 @@ public record FileEntry(String name, Path path, boolean directory, long size, Fi
      * "373B", "12M"). Every unit is one letter so the last digits always line up.
      */
     public String displaySize() {
-        if (link || directory) {
+        if (link || (directory && !sized)) {
             return link ? "<LNK>" : "<DIR>";
         }
         String human = humanSize(size);

@@ -7,7 +7,8 @@ import java.util.Locale;
 
 /**
  * The order of a panel listing: ".." first, then folders, then files, each group by the sort key. Extension and
- * size say nothing about a folder, so under them the folders keep name order (ascending). Ties are broken by
+ * size say nothing about a folder, so under them the folders keep name order (ascending), except that under size
+ * the folders whose size has been measured are sorted by it (unmeasured ones count as 0). Ties are broken by
  * name, so equal sizes or extensions still list predictably.
  */
 public record EntrySort(Key key, boolean descending) {
@@ -44,7 +45,8 @@ public record EntrySort(Key key, boolean descending) {
         for (FileEntry entry : entries) {
             (entry.name().equals("..") ? parent : entry.directory() ? folders : files).add(entry);
         }
-        boolean foldersByKey = key == Key.NAME || key == Key.MODIFIED || key == Key.ATTRIBUTES;
+        boolean foldersByKey = key == Key.NAME || key == Key.MODIFIED || key == Key.ATTRIBUTES
+                || (key == Key.SIZE && folders.stream().anyMatch(FileEntry::sized));
         folders.sort(foldersByKey ? comparator() : BY_NAME);
         files.sort(comparator());
         parent.addAll(folders);

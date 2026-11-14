@@ -359,6 +359,8 @@ public final class App {
         commands.put(Key.ctrl('p'), app -> app.palette.open());
         commands.put(new Key(KeyType.F9, null, true, false), App::directorySync);
         commands.put(new Key(KeyType.F7, null, false, true), App::findFiles);
+        commands.put(new Key(KeyType.Character, 's', false, true), App::folderSize);
+        commands.put(new Key(KeyType.Character, 'a', false, true), App::allFolderSizes);
         for (MenuBar.Menu menu : menuBar.menus()) {
             char hotkey = menu.hotkey();
             commands.put(new Key(KeyType.Character, hotkey, false, true), app -> app.menuBar.toggleByHotkey(hotkey));
@@ -397,6 +399,8 @@ public final class App {
                         new MenuBar.Item("Find files...", "Alt+F7", App::findFiles),
                         new MenuBar.Item("Invert marks", "*", app -> app.panel().invertMarks(true)),
                         new MenuBar.Item("Invert marks (files only)", "Alt+*", app -> app.panel().invertMarks(false)),
+                        new MenuBar.Item("Folder size", "Alt+S", App::folderSize),
+                        new MenuBar.Item("Size of all folders", "Alt+A", App::allFolderSizes),
                         new MenuBar.Item("Copy name(s) to clipboard", "Ctrl+C", app -> app.copyToClipboard(false)),
                         new MenuBar.Item("Copy full path(s) to clipboard", "Ctrl+K", app -> app.copyToClipboard(true)),
                         new MenuBar.Item("Undo last rename", "Ctrl+Z", App::undoRename),
@@ -431,6 +435,34 @@ public final class App {
                 new MenuBar.Item("Sort by attributes", "", app -> app.sortPanel(panel, EntrySort.Key.ATTRIBUTES)));
     }
 
+    /** Alt+S: measures the marked folders, or the folder under the cursor, and shows the sizes in the panel. */
+    private void folderSize() {
+        List<FileEntry> folders = panel().targets().stream().filter(e -> e.directory() && !e.link()).toList();
+        if (folders.isEmpty()) {
+            status = "Put the cursor on a folder or mark folders (links are not followed)";
+            return;
+        }
+        measure(folders);
+    }
+
+    /** Alt+A: measures every folder of the panel. */
+    private void allFolderSizes() {
+        List<FileEntry> folders = panel().entries().stream()
+                .filter(e -> e.directory() && !e.link() && !"..".equals(e.name())).toList();
+        if (folders.isEmpty()) {
+            status = "No folders here";
+            return;
+        }
+        measure(folders);
+    }
+
+    private void measure(List<FileEntry> folders) {
+        DirSizeJob job = new DirSizeJob(folders);
+        runJob(job);
+        panel().showSizes(job.sizes(), visibleRows());
+        status = job.summary();
+    }
+
     private void sortPanel(int panel, EntrySort.Key key) {
         active = panel;
         panels[panel].sortBy(key, visibleRows());
@@ -457,7 +489,8 @@ public final class App {
                         *                invert marks    Ctrl+PgDn  open as archive
                         Alt+*            invert (files)  Ctrl+C    copy name(s)
                         type letters     quick search    Ctrl+K    copy path(s)
-                        Alt+F7           find files
+                        Alt+F7           find files      Alt+S     folder size
+                        Alt+A            all folder sizes
                         click a column header: sort by it, click again: reverse (.EXT = extension)""")
                 .addButton(MessageDialogButton.Close)
                 .build();
@@ -1247,7 +1280,9 @@ public final class App {
                 bar.setValue(total > 0 ? (int) Math.min(1000, job.bytesDone() * 1000 / total)
                         : job.filesTotal() > 0 ? job.filesDone() * 1000 / job.filesTotal() : 0);
                 double seconds = Math.max(0.001, (System.nanoTime() - start) / 1e9);
-                stats.setText(job.tracksBytes()
+                stats.setText(job.bytesTotal() == 0 && job.filesTotal() == 0
+                        ? job.filesDone() + " items   " + FileEntry.humanSize(job.bytesDone())
+                        : job.tracksBytes()
                         ? job.filesDone() + " / " + job.filesTotal() + " items   "
                                 + FileEntry.humanSize(job.bytesDone()) + " / " + FileEntry.humanSize(total)
                                 + "   " + FileEntry.humanSize((long) (job.bytesDone() / seconds)) + "/s"

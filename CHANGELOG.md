@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Folder size (like Total Commander): `Alt+S` measures the marked folders or the one under the cursor, `Alt+A` every
+  folder of the panel (Commands menu and palette: "Folder size", "Size of all folders"). The total replaces `<DIR>`
+  in the size column, marked folders count in the selected size, and sorting by size orders measured folders. A
+  progress window with Esc to cancel; links and junctions are not followed.
+
 ## 0.9.0
 
 Fixes from a code audit.

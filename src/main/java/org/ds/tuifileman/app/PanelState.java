@@ -158,14 +158,37 @@ public final class PanelState {
         marked.clear();
     }
 
+    /** Size of the marked entries; a marked folder counts once its size has been measured. */
     public long markedSize() {
         long total = 0;
         for (FileEntry entry : entries) {
-            if (!entry.directory() && marked.contains(entry.path())) {
+            if ((!entry.directory() || entry.sized()) && marked.contains(entry.path())) {
                 total += entry.size();
             }
         }
         return total;
+    }
+
+    /**
+     * Shows measured folder sizes in the size column (until the next reload). The listing is sorted again, since
+     * under a sort by size the folders now have an order; the cursor stays on its entry.
+     */
+    public void showSizes(java.util.Map<Path, Long> sizes, int visibleRows) {
+        FileEntry current = current();
+        List<FileEntry> measured = new ArrayList<>(entries.size());
+        for (FileEntry entry : entries) {
+            Long total = entry.directory() ? sizes.get(entry.path()) : null;
+            measured.add(total == null ? entry : entry.withTreeSize(total));
+        }
+        entries = sort.apply(measured);
+        if (current != null) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).path().equals(current.path())) {
+                    cursorTo(i, visibleRows);
+                    break;
+                }
+            }
+        }
     }
 
     /** Toggles the mark on the current entry (not ".."), optionally moving the cursor down. */
