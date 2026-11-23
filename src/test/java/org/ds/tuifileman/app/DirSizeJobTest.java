@@ -91,4 +91,65 @@ class DirSizeJobTest {
         state.showSizes(java.util.Map.of(root.resolve("d"), 40L), 10);
         assertEquals(42, state.markedSize());
     }
+
+    @Test
+    void measuresManyFoldersInParallelAndKeepsTheirOrder() throws Exception {
+        List<Path> given = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            String folder = String.format("dir-%02d", i);
+            file(root, folder + "/top.bin", "x".repeat(i + 1));
+            if (i % 3 == 0) {
+                file(root, folder + "/a/b/nested.bin", "y".repeat(10));
+            }
+            given.add(root.resolve(folder));
+        }
+        java.util.Collections.reverse(given);
+        DirSizeJob job = new DirSizeJob(entries(given.toArray(Path[]::new)));
+        job.run();
+
+        List<DirSizeJob.Result> results = job.results();
+        assertEquals(given.size(), results.size());
+        for (int i = 0; i < given.size(); i++) {
+            Path expected = given.get(i);
+            int index = 39 - i;
+            long bytes = (index + 1) + (index % 3 == 0 ? 10 : 0);
+            assertEquals(expected, results.get(i).folder(), "results stay in the order given");
+            assertEquals(bytes, results.get(i).bytes());
+            assertEquals(index % 3 == 0 ? 2 : 1, results.get(i).files());
+            assertEquals(index % 3 == 0 ? 2 : 0, results.get(i).folders());
+        }
+    }
+
+    @Test
+    void aFailingFolderIsAProblemAndTheOthersAreMeasured() throws Exception {
+        List<FileEntry> given = new java.util.ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            String folder = String.format("dir-%02d", i);
+            for (int j = 0; j < 20; j++) {
+                file(root, folder + "/s" + (j % 4) + "/t" + (j % 3) + "/f" + j + ".bin", "x".repeat(5));
+            }
+            given.add(entries(root.resolve(folder)).get(0));
+        }
+        // Reading any attribute of a closed zip file system throws ClosedFileSystemException, an unchecked failure
+        // that the listing does not swallow. Given last, it is forked last and joined first.
+        Path broken;
+        try (java.nio.file.FileSystem zip = java.nio.file.FileSystems.newFileSystem(root.resolve("a.zip"),
+                java.util.Map.of("create", "true"))) {
+            broken = java.nio.file.Files.createDirectories(zip.getPath("/inside/sub"));
+        }
+        given.add(new FileEntry("sub", broken, true, 0, java.nio.file.attribute.FileTime.fromMillis(0)));
+        DirSizeJob job = new DirSizeJob(given);
+
+        job.run();
+
+        assertTrue(job.isDone());
+        List<DirSizeJob.Result> results = job.results();
+        assertEquals(30, results.size(), "every healthy folder was measured before the job claimed to be done");
+        for (DirSizeJob.Result result : results) {
+            assertEquals(100, result.bytes());
+            assertEquals(20, result.files());
+        }
+        assertEquals(List.of(new Job.Problem(broken.toString(), "ClosedFileSystemException")), job.errors());
+        assertTrue(job.summary().endsWith(", 1 problem"), job.summary());
+    }
 }

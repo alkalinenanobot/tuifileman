@@ -461,6 +461,11 @@ public final class App {
         runJob(job);
         panel().showSizes(job.sizes(), visibleRows());
         status = job.summary();
+        List<Job.Problem> errors = job.errors();
+        if (!errors.isEmpty()) {
+            showProblems("Folder size finished with " + errors.size()
+                    + (errors.size() == 1 ? " problem" : " problems"), errors);
+        }
     }
 
     private void sortPanel(int panel, EntrySort.Key key) {

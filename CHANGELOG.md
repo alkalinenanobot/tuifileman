@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1
+
+- Folder size measures all selected folders at once on one shared thread pool (top-level folders and their
+  subfolders in parallel) instead of one folder after the other.
+- A folder whose measuring fails is listed in the problem window instead of stopping the whole job; the other folders
+  are still measured and shown, and the status line counts the problems.
+
 ## 0.10.0
 
 - Folder size (like Total Commander): `Alt+S` measures the marked folders or the one under the cursor, `Alt+A` every
